@@ -1,3 +1,13 @@
+<p align="center">
+  <img src="./assets/logo.png" alt="SmartPay Malawi" width="200">
+</p>
+
+<h1 align="center">SmartPay Malawi</h1>
+
+<p align="center">
+  API-first payment gateway for Malawi.
+</p>
+
 # SmartPay Malawi
 
 **SmartPay Malawi** is an API-first payment gateway project focused on providing a unified integration layer for online payments in Malawi.

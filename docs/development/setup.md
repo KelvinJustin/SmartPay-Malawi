@@ -132,6 +132,9 @@ npx prisma generate
 
 When database schema changes are introduced, use the appropriate Prisma migration or schema workflow defined by the project.
 
+For full details on Prisma 7 driver adapters, NestJS `DatabaseService`, migrations, and best practices, see the dedicated guide:
+* [Database Setup & Prisma 7 Guide](../database/setup.md)
+
 Do not commit database credentials or other secrets.
 
 ---

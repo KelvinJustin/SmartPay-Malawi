@@ -10,6 +10,50 @@ The platform is being developed as a modular backend that provides merchants wit
 
 > **Status:** 🚧 Early development
 
+## Table of Contents
+
+* [Overview](#overview)
+* [Core Capabilities](#core-capabilities)
+* [Architecture](#architecture)
+* [Technology Stack](#technology-stack)
+* [Project Structure](#project-structure)
+* [Getting Started](#getting-started)
+
+  * [Prerequisites](#prerequisites)
+  * [Installation](#installation)
+  * [Environment Variables](#environment-variables)
+  * [Development](#development)
+  * [Docker Development](#docker-development)
+* [Testing](#testing)
+* [Development Principles](#development-principles)
+
+  * [API First](#api-first)
+  * [Provider Agnostic](#provider-agnostic)
+  * [Reliability](#reliability)
+  * [Idempotency](#idempotency)
+  * [Reconciliation](#reconciliation)
+  * [Security](#security)
+* [Documentation](#documentation)
+* [Development Status](#development-status)
+
+  * [Completed](#completed)
+  * [In Progress / Planned](#in-progress--planned)
+* [Repository](#repository)
+* [License](#license)
+
+## Documentation
+
+Detailed technical, architectural, business, and development documentation is maintained in [`docs/`](./docs/).
+
+| Documentation                        | Description                                                                 |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| [Architecture](./docs/architecture/) | System architecture, modules, data flow, and technical decisions            |
+| [API](./docs/api/)                   | API design, endpoints, authentication, payments, and webhooks               |
+| [Business](./docs/business/)         | Product definition, payment lifecycle, providers, and business requirements |
+| [Development](./docs/development/)   | Development setup, environment configuration, testing, and team workflow    |
+
+> Documentation is being developed alongside the platform and will expand as the architecture and product requirements become more defined.
+
 ## Overview
 
 Integrating online payments can require businesses to work with multiple payment providers, each with different APIs, payment flows, callbacks, and transaction states.
@@ -145,6 +189,11 @@ smart-pay-malawi/
 ├── test/
 ├── prisma/
 ├── generated/
+├── docs/
+│   ├── architecture/
+│   ├── api/
+│   ├── business/
+│   └── development/
 ├── Dockerfile
 ├── compose.yaml
 ├── .dockerignore

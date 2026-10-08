@@ -3,8 +3,6 @@ import { createObserveModule } from '@nestjs/observe';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { DatabaseModule } from './database/database.module.js';
-import { TestApiModule } from './test_api/test_api.module.js';
-import { EndpointerModule } from './endpointer/endpointer.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -18,8 +16,6 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       serviceId: 'smart-pay-malawi',
     }),
     DatabaseModule,
-    TestApiModule,
-    EndpointerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -223,10 +223,7 @@ The project is currently in its foundational development stage.
 
 ### Completed
 
-* [x] Repository initialized
 * [x] NestJS application initialized
-* [x] TypeScript development environment
-* [x] Git repository configuration
 * [x] Initial project documentation
 
 ### Planned

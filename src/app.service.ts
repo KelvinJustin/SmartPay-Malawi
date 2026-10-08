@@ -5,8 +5,4 @@ export class AppService {
   getHello(): string {
     return 'Hello World!';
   }
-  
-  getTest(): string {
-    return "message: SmartPay API is working";
-  }
 }

@@ -1,118 +1,262 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# SmartPay Malawi
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+**SmartPay Malawi** is an API-first payment gateway project focused on providing a unified integration layer for online payments in Malawi.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+The project is being built with a modular backend architecture designed to integrate with multiple payment providers while giving merchants a consistent API, payment lifecycle, webhook handling, and transaction management experience.
 
-## Description
+> **Status:** 🚧 Early development
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Overview
 
-## Project setup
+SmartPay aims to simplify payment integration for businesses by providing a single API instead of requiring merchants to integrate independently with multiple payment providers.
 
-```bash
-$ npm install
+The system is being designed around:
+
+* Unified payment APIs
+* Multiple payment provider integrations
+* Payment lifecycle management
+* Webhook processing
+* Idempotent payment operations
+* Transaction tracking
+* Reconciliation
+* Merchant integrations
+* Background job processing
+* Secure API design
+
+The project is initially focused on the **Malawian payment ecosystem**.
+
+## Architecture
+
+The backend is being developed as a modular application with the following core components:
+
+```text
+                    Merchant Application
+                           │
+                           ▼
+                    SmartPay API
+                           │
+             ┌─────────────┼─────────────┐
+             │             │             │
+             ▼             ▼             ▼
+        Payments       Webhooks      Merchants
+             │
+             ▼
+      Payment Providers
+             │
+       ┌─────┼─────┐
+       ▼     ▼     ▼
+    Airtel  TNM   Banks
+    Money   Mpamba
+             │
+             ▼
+       Reconciliation
 ```
 
-## Compile and run the project
+Background processing will use Redis and BullMQ where asynchronous processing is required.
 
-```bash
-# development
-$ npm run start
+## Technology Stack
 
-# watch mode
-$ npm run start:dev
+### Backend
 
-# production mode
-$ npm run start:prod
+* **TypeScript**
+* **NestJS**
+* **PostgreSQL**
+* **Prisma**
+* **Redis**
+* **BullMQ**
+* **Vitest**
+
+### Infrastructure
+
+* **Docker**
+* **Docker Compose**
+
+### Planned Frontend
+
+* **React**
+
+The frontend is separate from the core payment API and will be introduced as the project develops.
+
+## Project Structure
+
+The repository is currently based on a NestJS application structure and will evolve as the system is developed.
+
+```text
+smart-pay-malawi/
+├── src/
+├── test/
+├── prisma/
+├── Dockerfile
+├── compose.yaml
+├── .env.example
+├── package.json
+├── tsconfig.json
+└── README.md
 ```
 
-## Run tests
+The final structure will follow a modular architecture around business domains rather than organizing the application solely by technical layer.
+
+## Getting Started
+
+### Prerequisites
+
+Install the following before running the project:
+
+* Node.js
+* npm
+* Git
+* Docker
+
+PostgreSQL and Redis can be provided through Docker during development.
+
+### Installation
+
+Clone the repository:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+git clone https://github.com/KelvinJustin/SmartPay-Malawi.git
+cd SmartPay-Malawi
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Install dependencies:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm install
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Environment Variables
 
-## Observability
+Create a local environment file:
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+```bash
+cp .env.example .env
+```
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+Configure the required environment variables before starting the application.
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+> Never commit `.env` or other files containing credentials, API keys, secrets, or private keys.
 
-This project is already instrumented. Create a free account at [observe.nestjs.com](https://observe.nestjs.com), add an application, and paste the generated app key and secret into the `ObserveModule.forRoot()` call in `src/app.module.ts`.
+### Development
 
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
+Start the application in development mode:
 
-## Resources
+```bash
+npm run start:dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+The API will run on the configured application port.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Docker
 
-## Support
+The project will use Docker to provide a consistent development and deployment environment.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Once the Docker configuration is in place:
 
-## Stay in touch
+```bash
+docker compose up --build
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+This will provide the application infrastructure required by the project.
+
+## Testing
+
+Run unit tests:
+
+```bash
+npm run test
+```
+
+Run end-to-end tests:
+
+```bash
+npm run test:e2e
+```
+
+Run tests with coverage:
+
+```bash
+npm run test:cov
+```
+
+## Development Principles
+
+SmartPay is being developed around several core principles:
+
+### API First
+
+Payment functionality is exposed through well-defined APIs so that web, mobile, and other client applications can integrate with SmartPay independently of the backend implementation.
+
+### Provider Agnostic
+
+Merchant integrations should not need to understand the implementation details of individual payment providers.
+
+```text
+Merchant
+   │
+   ▼
+SmartPay API
+   │
+   ├── Provider A
+   ├── Provider B
+   └── Provider C
+```
+
+### Reliability
+
+Payment operations must account for unreliable networks, provider failures, duplicate requests, delayed callbacks, and asynchronous processing.
+
+### Idempotency
+
+Payment operations should be designed to prevent duplicate transactions when the same request is submitted more than once.
+
+### Reconciliation
+
+Internal transaction records should be reconcilable against payment-provider records to identify discrepancies and ensure accurate financial state.
+
+### Security
+
+Payment-related credentials, API keys, signatures, and sensitive transaction data must be handled securely throughout the system.
+
+## Development Status
+
+The project is currently in its foundational development stage.
+
+### Completed
+
+* [x] Repository initialized
+* [x] NestJS application initialized
+* [x] TypeScript development environment
+* [x] Git repository configuration
+* [x] Initial project documentation
+
+### Planned
+
+* [ ] PostgreSQL integration
+* [ ] Prisma configuration
+* [ ] Database schema
+* [ ] Authentication and authorization
+* [ ] Merchant management
+* [ ] Payment API
+* [ ] Payment state machine
+* [ ] Provider abstraction
+* [ ] Webhook processing
+* [ ] Idempotency
+* [ ] Redis integration
+* [ ] BullMQ background jobs
+* [ ] Transaction reconciliation
+* [ ] Docker development environment
+* [ ] Provider integrations
+* [ ] API documentation
+* [ ] Production deployment
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+This repository is **proprietary** and is not currently distributed as open-source software.
+
+The source code and associated intellectual property are owned by the project owner. No permission is granted to copy, modify, distribute, sublicense, or commercially use the software without explicit authorization.
+
+## Project
+
+**SmartPay Malawi**
+
+Payment infrastructure for the Malawian digital economy.

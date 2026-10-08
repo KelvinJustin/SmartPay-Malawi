@@ -4,59 +4,113 @@
 
 # SmartPay Malawi
 
-**SmartPay Malawi** is an API-first payment gateway project focused on providing a unified integration layer for online payments in Malawi.
+**SmartPay Malawi** is an API-first payment gateway and integration layer designed to simplify online payments in Malawi.
 
-The project is being built with a modular backend architecture designed to integrate with multiple payment providers while giving merchants a consistent API, payment lifecycle, webhook handling, and transaction management experience.
+The platform is being developed as a modular backend that provides merchants with a unified API for initiating and managing payments across multiple payment providers, while abstracting provider-specific implementation details.
 
 > **Status:** 🚧 Early development
 
 ## Overview
 
-SmartPay aims to simplify payment integration for businesses by providing a single API instead of requiring merchants to integrate independently with multiple payment providers.
+Integrating online payments can require businesses to work with multiple payment providers, each with different APIs, payment flows, callbacks, and transaction states.
 
-The system is being designed around:
+SmartPay aims to provide a single integration point between merchants and payment providers.
+
+```text
+Merchant Application
+        │
+        ▼
+   SmartPay API
+        │
+        ▼
+Payment Abstraction
+        │
+   ┌────┼────┐
+   ▼    ▼    ▼
+Airtel TNM  Banks
+Money Mpamba
+   │    │    │
+   └────┼────┘
+        ▼
+ Provider Responses
+        │
+        ▼
+ Reconciliation
+```
+
+The platform is initially focused on the **Malawian payment ecosystem**, with the architecture designed to accommodate additional providers over time.
+
+## Core Capabilities
+
+SmartPay is being designed around:
 
 * Unified payment APIs
-* Multiple payment provider integrations
+* Merchant integrations
 * Payment lifecycle management
+* Multiple payment provider integrations
+* Provider abstraction
 * Webhook processing
 * Idempotent payment operations
 * Transaction tracking
 * Reconciliation
-* Merchant integrations
-* Background job processing
 * Secure API design
+* Background processing for asynchronous operations
 
-The project is initially focused on the **Malawian payment ecosystem**.
+The intended payment lifecycle is broadly:
+
+```text
+Initiated
+    │
+    ▼
+Processing
+    │
+    ├──────────────► Failed
+    │
+    ▼
+Successful
+    │
+    ▼
+Funds Awaiting Settlement
+    │
+    ▼
+Settled / Withdrawn
+```
+
+Actual provider-specific states will be normalized into SmartPay's internal payment state model.
 
 ## Architecture
 
-The backend is being developed as a modular application with the following core components:
+SmartPay is being developed as a **modular monolith**, with business domains separated into independent modules within the same backend application.
 
 ```text
                     Merchant Application
                            │
                            ▼
-                    SmartPay API
+                    ┌─────────────┐
+                    │ SmartPay API│
+                    └──────┬──────┘
                            │
              ┌─────────────┼─────────────┐
              │             │             │
              ▼             ▼             ▼
-        Payments       Webhooks      Merchants
+        Payments       Merchants      Webhooks
              │
              ▼
-      Payment Providers
+      Provider Abstraction
              │
        ┌─────┼─────┐
        ▼     ▼     ▼
     Airtel  TNM   Banks
     Money   Mpamba
-             │
+       │     │     │
+       └─────┼─────┘
              ▼
        Reconciliation
 ```
 
-Background processing will use Redis and BullMQ where asynchronous processing is required.
+Redis is used for infrastructure-level caching and is available for asynchronous workloads. **BullMQ will be introduced where background job processing is required.**
+
+PostgreSQL is currently provided through a hosted development database, with Prisma used as the database ORM and schema management layer.
 
 ## Technology Stack
 
@@ -67,7 +121,6 @@ Background processing will use Redis and BullMQ where asynchronous processing is
 * **PostgreSQL**
 * **Prisma**
 * **Redis**
-* **BullMQ**
 * **Vitest**
 
 ### Infrastructure
@@ -75,43 +128,48 @@ Background processing will use Redis and BullMQ where asynchronous processing is
 * **Docker**
 * **Docker Compose**
 
-### Planned Frontend
+### Planned
 
-* **React**
+* **BullMQ** — background job processing
+* **React** — separate frontend application
 
-The frontend is separate from the core payment API and will be introduced as the project develops.
+The frontend will remain separate from the core payment API.
 
 ## Project Structure
 
-The repository is currently based on a NestJS application structure and will evolve as the system is developed.
+The repository currently follows a standard NestJS structure and will evolve into a domain-oriented modular architecture.
 
 ```text
 smart-pay-malawi/
 ├── src/
 ├── test/
 ├── prisma/
+├── generated/
 ├── Dockerfile
 ├── compose.yaml
+├── .dockerignore
 ├── .env.example
 ├── package.json
 ├── tsconfig.json
 └── README.md
 ```
 
-The final structure will follow a modular architecture around business domains rather than organizing the application solely by technical layer.
+As the system grows, the `src/` directory will be organized around business domains rather than purely technical layers.
 
 ## Getting Started
 
 ### Prerequisites
 
-Install the following before running the project:
+Install:
 
-* Node.js
+* Node.js 24+
 * npm
 * Git
 * Docker
 
-PostgreSQL and Redis can be provided through Docker during development.
+The project uses Docker for the local application and Redis development environment.
+
+PostgreSQL is currently provided through a hosted development database.
 
 ### Installation
 
@@ -130,37 +188,62 @@ npm install
 
 ### Environment Variables
 
-Create a local environment file:
+Create a local environment file from the example:
 
 ```bash
 cp .env.example .env
 ```
 
-Configure the required environment variables before starting the application.
+Configure the required variables before starting the application.
 
-> Never commit `.env` or other files containing credentials, API keys, secrets, or private keys.
+At minimum, the development environment requires the database connection and Redis configuration.
+
+> **Never commit `.env` or files containing credentials, API keys, secrets, private keys, or provider credentials.**
 
 ### Development
 
-Start the application in development mode:
+Run the API directly with Node:
 
 ```bash
 npm run start:dev
 ```
 
-The API will run on the configured application port.
+The API will start on the configured application port.
 
-### Docker
+### Docker Development
 
-The project will use Docker to provide a consistent development and deployment environment.
-
-Once the Docker configuration is in place:
+The recommended development environment uses Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
-This will provide the application infrastructure required by the project.
+The development environment consists of:
+
+```text
+                 Neon PostgreSQL
+                       ▲
+                       │
+                 SmartPay API
+                       │
+                       ▼
+                Redis Container
+```
+
+The API source code is mounted into the container during development, allowing NestJS to watch the source files and recompile changes automatically.
+
+To stop the development environment:
+
+```bash
+docker compose down
+```
+
+To rebuild the API after dependency or Dockerfile changes:
+
+```bash
+docker compose build
+docker compose up
+```
 
 ## Testing
 
@@ -168,6 +251,12 @@ Run unit tests:
 
 ```bash
 npm run test
+```
+
+Run tests in watch mode:
+
+```bash
+npm run test:watch
 ```
 
 Run end-to-end tests:
@@ -184,11 +273,9 @@ npm run test:cov
 
 ## Development Principles
 
-SmartPay is being developed around several core principles:
-
 ### API First
 
-Payment functionality is exposed through well-defined APIs so that web, mobile, and other client applications can integrate with SmartPay independently of the backend implementation.
+Payment functionality is exposed through well-defined APIs so that web, mobile, and other client applications can integrate with SmartPay independently of the underlying implementation.
 
 ### Provider Agnostic
 
@@ -200,64 +287,106 @@ Merchant
    ▼
 SmartPay API
    │
-   ├── Provider A
-   ├── Provider B
-   └── Provider C
+   ▼
+Provider Abstraction
+   │
+   ├── Airtel Money
+   ├── TNM Mpamba
+   └── Banks
 ```
+
+Provider-specific authentication, request formats, responses, callbacks, and implementation details should remain isolated within provider integrations.
 
 ### Reliability
 
-Payment operations must account for unreliable networks, provider failures, duplicate requests, delayed callbacks, and asynchronous processing.
+Payment systems must account for:
+
+* Unreliable networks
+* Provider failures
+* Duplicate requests
+* Delayed callbacks
+* Provider timeouts
+* Asynchronous payment completion
+* Partial failures
+
+The system should therefore favor explicit transaction states, retries where appropriate, and durable records.
 
 ### Idempotency
 
-Payment operations should be designed to prevent duplicate transactions when the same request is submitted more than once.
+Payment operations must prevent duplicate transactions when the same request is submitted multiple times.
+
+Idempotency will be particularly important for payment initiation, webhook processing, and retryable operations.
 
 ### Reconciliation
 
-Internal transaction records should be reconcilable against payment-provider records to identify discrepancies and ensure accurate financial state.
+SmartPay's internal transaction records should be reconcilable against provider records.
+
+Reconciliation is intended to identify discrepancies between:
+
+```text
+SmartPay Records
+       │
+       │
+       ▼
+Provider Records
+       │
+       ▼
+Reconciliation
+       │
+       ├── Matched
+       ├── Missing
+       ├── Mismatched
+       └── Requires Review
+```
 
 ### Security
 
-Payment-related credentials, API keys, signatures, and sensitive transaction data must be handled securely throughout the system.
+Payment credentials, API keys, authentication tokens, webhook signatures, and sensitive transaction data must be handled securely.
+
+Secrets should be provided through environment configuration or an appropriate secrets-management system rather than committed to source control.
 
 ## Development Status
 
-The project is currently in its foundational development stage.
+SmartPay is currently in its foundational development stage.
 
 ### Completed
 
 * [x] NestJS application initialized
+* [x] TypeScript backend configured
+* [x] Prisma 7 configured
+* [x] PostgreSQL development database configured
+* [x] Redis development container
+* [x] Docker development environment
+* [x] Docker Compose configuration
+* [x] Environment configuration
 * [x] Initial project documentation
 
-### Planned
+### In Progress / Planned
 
-* [ ] PostgreSQL integration
-* [ ] Prisma configuration
 * [ ] Database schema
 * [ ] Authentication and authorization
 * [ ] Merchant management
 * [ ] Payment API
 * [ ] Payment state machine
 * [ ] Provider abstraction
+* [ ] Provider integrations
 * [ ] Webhook processing
 * [ ] Idempotency
-* [ ] Redis integration
+* [ ] Redis application integration
 * [ ] BullMQ background jobs
 * [ ] Transaction reconciliation
-* [ ] Docker development environment
-* [ ] Provider integrations
 * [ ] API documentation
 * [ ] Production deployment
+* [ ] React frontend
 
-## License
-
-This repository is **proprietary** and is not currently distributed as open-source software.
-
-The source code and associated intellectual property are owned by the project owner. No permission is granted to copy, modify, distribute, sublicense, or commercially use the software without explicit authorization.
-
-## Project
+## Repository
 
 **SmartPay Malawi**
 
 Payment infrastructure for the Malawian digital economy.
+
+## License
+
+This repository is **proprietary** and is not distributed as open-source software.
+
+The source code and associated intellectual property are owned by the project owner. No permission is granted to copy, modify, distribute, sublicense, or commercially use the software without explicit authorization.

@@ -22,6 +22,7 @@ lerna-debug.log*
 # Tests
 /coverage
 /.nyc_output
+*cookies.txt
 
 # IDEs and editors
 /.idea

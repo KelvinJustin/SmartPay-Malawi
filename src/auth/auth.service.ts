@@ -3,8 +3,13 @@ import bcrypt from 'bcrypt';
 import { RegisterAuthDto } from './dto/register-auth.dto.js';
 import { LoginAuthDto } from './dto/login-auth.dto.js';
 import { UpdateAuthDto } from './dto/update-auth.dto.js';
+import { VerifyEmailDto } from './dto/verify-email.dto.js';
 import { DatabaseService } from '../database/database.service.js';
 import { JwtService } from '@nestjs/jwt';
+import { EmailService } from '../email/email.service.js';
+import { ConfigService } from '@nestjs/config';
+import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+
 
 // @Injectable() tells NestJS that this class can be managed by its
 // dependency injection system and injected into other classes.
@@ -17,56 +22,78 @@ export class AuthService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly jwtService: JwtService,
-  ) {}
+    private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
+  ) { }
+
+
+  private hashOtp(merchantId: string, code: string): string {
+    return createHmac(
+      'sha256',
+      this.configService.getOrThrow<string>('OTP_SECRET'),
+    )
+      .update(`${merchantId}:${code}`)
+      .digest('hex');
+  }
+
 
   // ============================================================
   // REGISTER A NEW MERCHANT
   // ============================================================
 
-  // async allows this method to use await for asynchronous operations.
-  // RegisterAuthDto defines the structure of the registration data
-  // that this method expects to receive.
-  async register(registerAuthDto: RegisterAuthDto) {
 
-    // Destructuring extracts the required properties from the DTO.
-    // Instead of repeatedly writing registerAuthDto.email, we can
-    // access email, name, password and phone directly.
+  async register(registerAuthDto: RegisterAuthDto) {
     const { name, email, password, phone } = registerAuthDto;
 
-    // Check whether a merchant with this email already exists.
-    // findUnique() queries the database using the unique email field.
-    const existingUser = await this.databaseService.merchant.findUnique({
-      where: { email },
+    const existingUser = await this.databaseService.merchant.findFirst({
+      where: {
+        OR: [{ email }, { phone }],
+      },
     });
 
-    // If a matching merchant exists, registration is rejected.
-    // ConflictException produces an HTTP 409 Conflict response.
     if (existingUser) {
-      throw new ConflictException('Email is already registered');
+      throw new ConflictException(
+        'Email or phone number is already registered',
+      );
     }
 
-    // Hash the password before saving it.
-    // bcrypt.hash() uses a salt and a configurable work factor.
-    // PASS_SALTS is the environment variable that supplies that work factor
-    // (also called "salt rounds"). Environment variables are strings, so
-    // Number() converts it. If it is missing or not a valid number we fall
-    // back to 10, a safe default for development.
-    // The original password is never intentionally stored in the database.
-    const parsedRounds = Number(process.env.PASS_SALTS);
-    const saltRounds =
-      Number.isInteger(parsedRounds) && parsedRounds >= 4 ? parsedRounds : 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(
+      password,
+      Number(process.env.ENCYPTION_SALT),
+    );
 
-    // Create the merchant record in the database.
-    // The passwordHash field receives the bcrypt hash, not the plaintext password.
     const user = await this.databaseService.merchant.create({
-      data: { name, email, passwordHash: hashedPassword, phone },
+      data: {
+        name,
+        email,
+        passwordHash: hashedPassword,
+        phone,
+      },
     });
 
-    // Return a success message and the registered email.
-    // We do not return the password or its hash.
-    return { message: 'Registration successful', email: user.email };
+    const code = randomInt(0, 1_000_000)
+      .toString()
+      .padStart(6, '0');
+
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await this.databaseService.otpChallenge.create({
+      data: {
+        merchantId: user.id,
+        purpose: 'EMAIL_VERIFICATION',
+        codeHash: this.hashOtp(user.id, code),
+        expiresAt,
+      },
+    });
+
+    await this.emailService.sendVerificationCode(user.email, code);
+
+    return {
+      message: 'Registration successful. Check your email for the verification code.',
+      email: user.email,
+    };
   }
+
 
   // ============================================================
   // LOG IN AN EXISTING MERCHANT
@@ -106,6 +133,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    if (!user.emailVerifiedAt) {
+      throw new UnauthorizedException(
+        'Please verify your email before logging in',
+      );
+    }
+
     // ------------------------------------------------------------
     // GENERATE THE JWT ACCESS TOKEN
     // ------------------------------------------------------------
@@ -122,6 +155,70 @@ export class AuthService {
     return {
       accessToken: await this.jwtService.signAsync(payload)
     };
+  }
+
+  //verify email
+
+  async verifyEmail(dto: VerifyEmailDto) {
+    const { email, code } = dto;
+
+    const merchant = await this.databaseService.merchant.findUnique({
+      where: { email },
+    });
+
+    if (!merchant) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    if (merchant.emailVerifiedAt) {
+      return { message: 'Email is already verified' };
+    }
+
+    const challenge = await this.databaseService.otpChallenge.findFirst({
+      where: {
+        merchantId: merchant.id,
+        purpose: 'EMAIL_VERIFICATION',
+        consumedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (
+      !challenge ||
+      challenge.expiresAt.getTime() <= Date.now() ||
+      challenge.attempts >= 5
+    ) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    const submittedHash = this.hashOtp(merchant.id, code);
+
+    const matches = timingSafeEqual(
+      Buffer.from(submittedHash, 'hex'),
+      Buffer.from(challenge.codeHash, 'hex'),
+    );
+
+    if (!matches) {
+      await this.databaseService.otpChallenge.update({
+        where: { id: challenge.id },
+        data: { attempts: { increment: 1 } },
+      });
+
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    await this.databaseService.$transaction([
+      this.databaseService.otpChallenge.update({
+        where: { id: challenge.id },
+        data: { consumedAt: new Date() },
+      }),
+      this.databaseService.merchant.update({
+        where: { id: merchant.id },
+        data: { emailVerifiedAt: new Date() },
+      }),
+    ]);
+
+    return { message: 'Email verified successfully' };
   }
 
   // ============================================================

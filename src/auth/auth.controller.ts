@@ -14,6 +14,7 @@ import type { Request, Response } from 'express';
 import { AuthService } from './auth.service.js';
 import { RegisterAuthDto } from './dto/register-auth.dto.js';
 import { LoginAuthDto } from './dto/login-auth.dto.js';
+import { VerifyEmailDto } from './dto/verify-email.dto.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 
 // Name of the cookie used to store the JWT.
@@ -30,7 +31,7 @@ const cookieOptions = {
 @Controller('auth')
 export class AuthController {
   // Inject AuthService to handle authentication business logic.
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   @Post('register')
   // Register a new merchant using the submitted registration details.
@@ -73,6 +74,11 @@ export class AuthController {
   ) {
     // Return the authenticated user's identity attached by the JWT strategy.
     return request.user;
+  }
+
+  @Post('verify-email')
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto);
   }
 
   @Post('logout')

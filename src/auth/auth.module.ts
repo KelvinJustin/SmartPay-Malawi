@@ -8,6 +8,7 @@ import { AuthController } from './auth.controller.js';
 import { JwtStrategy } from './jwt.strategy.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { DatabaseModule } from '../database/database.module.js';
+import { EmailModule } from '../email/email.module.js';
 
 @Module({
   imports: [
@@ -16,6 +17,9 @@ import { DatabaseModule } from '../database/database.module.js';
 
     // Make environment configuration available to this module.
     ConfigModule,
+
+    //email module
+    EmailModule,
 
     // Configure Passport to use JWT authentication by default.
     PassportModule.register({ defaultStrategy: 'jwt' }),

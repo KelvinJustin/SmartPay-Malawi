@@ -9,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 enum MerchantStatus {
@@ -18,16 +18,42 @@ enum MerchantStatus {
   SUSPENDED
 }
 
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  LOGIN
+}
+
 model Merchant {
-  id        String         @id @default(uuid()) @db.Uuid
-  name      String
-  email     String         @unique
-  passwordHash String
-  phone     String         @unique
-  pinHash   String?        
-  status    MerchantStatus @default(PENDING)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id              String         @id @default(uuid()) @db.Uuid
+  name            String
+  email           String         @unique
+  passwordHash    String
+  phone           String         @unique
+  pinHash         String?
+  status          MerchantStatus @default(PENDING)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  otpChallenges OtpChallenge[]
 
   @@map("merchants")
+}
+
+model OtpChallenge {
+  id         String     @id @default(uuid()) @db.Uuid
+  merchantId String     @db.Uuid
+  purpose    OtpPurpose
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  sentAt     DateTime   @default(now())
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, purpose, consumedAt])
+  @@index([expiresAt])
+  @@map("otp_challenges")
 }

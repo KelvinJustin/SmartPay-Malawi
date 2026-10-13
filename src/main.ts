@@ -19,11 +19,13 @@ async function bootstrap() {
   );
 
   // Allow the React frontend to make requests with cookies.
-  // Change this origin if your frontend uses another port.
-  // app.enableCors({
-  //   origin: 'http://localhost:5173',
-  //   credentials: true,
-  // });
+  // FRONTEND_URL must be the EXACT origin of the frontend (no trailing slash).
+  // `credentials: true` is required for the browser to send/accept cookies,
+  // and it cannot be combined with origin '*'.
+  app.enableCors({
+    origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+    credentials: true,
+  });
 
   await app.listen(process.env.PORT ?? 3000);
 }

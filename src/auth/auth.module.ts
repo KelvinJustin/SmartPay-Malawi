@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
@@ -32,9 +32,12 @@ import { EmailModule } from '../email/email.module.js';
         // Retrieve the JWT signing secret or throw an error if it is missing.
         secret: configService.getOrThrow<string>('JWT_SECRET'),
 
-        // Set the lifetime of generated access tokens to 15 minutes.
+        // Lifetime of generated access tokens. Read from JWT_EXPIRES_IN
+        // (e.g. "15m") and default to 15 minutes if it is not set.
+        // Keep this in sync with the cookie maxAge in auth.controller.ts.
         signOptions: {
-          expiresIn: '15m',
+          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ??
+            '15m') as NonNullable<JwtSignOptions['expiresIn']>,
         },
       }),
     }),

@@ -47,24 +47,25 @@ export class AuthService {
 
     // Hash the password before saving it.
     // bcrypt.hash() uses a salt and a configurable work factor.
-    // ENCYPTION_SALT is the environment variable used by this code
-    // to supply that work factor.
-    // Number() converts the environment variable from a string to a number.
+    // PASS_SALTS is the environment variable that supplies that work factor
+    // (also called "salt rounds"). Environment variables are strings, so
+    // Number() converts it. If it is missing or not a valid number we fall
+    // back to 10, a safe default for development.
     // The original password is never intentionally stored in the database.
-    const hashedPassword = await bcrypt.hash(
-      password,
-      Number(process.env.ENCYPTION_SALT),
-    );
+    const parsedRounds = Number(process.env.PASS_SALTS);
+    const saltRounds =
+      Number.isInteger(parsedRounds) && parsedRounds >= 4 ? parsedRounds : 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Create the merchant record in the database.
-    // The password field receives the bcrypt hash, not the plaintext password.
+    // The passwordHash field receives the bcrypt hash, not the plaintext password.
     const user = await this.databaseService.merchant.create({
-      data: { name, email, password: hashedPassword, phone },
+      data: { name, email, passwordHash: hashedPassword, phone },
     });
 
     // Return a success message and the registered email.
     // We do not return the password or its hash.
-    return { "message": "you have rgistered successfully", email: user.email };
+    return { message: 'Registration successful', email: user.email };
   }
 
   // ============================================================
@@ -96,7 +97,7 @@ export class AuthService {
     // Compare the submitted password with the stored bcrypt hash.
     // bcrypt.compare() handles the salt and hashing parameters encoded
     // in the stored hash; you do not hash the submitted password manually.
-    const passwordMatch = await bcrypt.compare(password, user.password);
+    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
 
     // If the passwords do not match, reject the login.
     // The same error message is used for an unknown email and an incorrect

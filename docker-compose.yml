@@ -24,6 +24,10 @@ services:
     image: redis:8-alpine
     container_name: smartpay-redis
     restart: unless-stopped
+    # Publish Redis to the host so the API can also be run outside Docker
+    # (npm run start:dev) and still reach it on localhost:6379.
+    ports:
+      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:

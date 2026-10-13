@@ -9,7 +9,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { request, Request, Response } from 'express';
+import type { Request, Response } from 'express';
 
 import { AuthService } from './auth.service.js';
 import { RegisterAuthDto } from './dto/register-auth.dto.js';
@@ -66,7 +66,7 @@ export class AuthController {
     @Req()
     request: Request & {
       user: {
-        id: string;
+        userId: string;
         email: string;
       };
     },

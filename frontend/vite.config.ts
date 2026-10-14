@@ -12,6 +12,14 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
-  // Must match FRONTEND_URL in the backend .env (the CORS origin).
-  server: { port: 5173, strictPort: true },
+  server: {
+    // Must match FRONTEND_URL in the backend .env (the CORS origin).
+    port: 5173,
+    strictPort: true,
+    // Listen on all interfaces so Docker can publish the port.
+    host: true,
+    // File-change events don't cross the Docker/Windows boundary,
+    // so poll when running in Docker (set in docker-compose.yml).
+    watch: process.env.CHOKIDAR_USEPOLLING ? { usePolling: true } : undefined,
+  },
 });

@@ -8,6 +8,7 @@ import { MerchantsModule } from './merchants/merchants.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { EmailModule } from './email/email.module.js';
 import { ArcjetModule } from './arcjet/arcjet.module.js';
+import { AdminModule } from './admin/admin.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -26,6 +27,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AuthModule,
     EmailModule,
     ArcjetModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

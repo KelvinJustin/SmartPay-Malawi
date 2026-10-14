@@ -48,8 +48,8 @@ await this.emailService.sendVerificationCode('merchant@example.com', '048291');
 - The raw `code` is passed here; the hashed version is what is stored in the
   database — this service never sees or stores the hash.
 - If this throws, the registration still completes (the merchant exists in the
-  DB). The merchant will need to request a new code. Consider wrapping in a
-  try/catch and returning a warning if delivery cannot be confirmed.
+  DB). The merchant will need to request a new code. Will wrap in a
+  try/catch and returning a warning if delivery cannot be confirmed later today.
 
 ---
 
@@ -68,8 +68,6 @@ await this.emailService.sendLoginCode('merchant@example.com', '739102');
 - If this throws, `AuthService.login()` immediately marks the challenge as
   consumed (`consumedAt: new Date()`) so the undelivered code can never be
   verified. A `503 Service Unavailable` is returned to the caller.
-- This is the correct pattern — login codes must not silently exist in the
-  database without being delivered.
 
 ---
 
@@ -125,7 +123,7 @@ Planned emails to add as the merchant module is built:
 
 ## 8. Testing
 
-For local development use [Mailpit](https://github.com/axllent/mailpit) or
+For local development you can use [Mailpit](https://github.com/axllent/mailpit) or
 [Mailtrap](https://mailtrap.io) — both provide an SMTP server that captures
 outgoing mail without delivering it.
 
@@ -140,6 +138,8 @@ SMTP_FROM=SmartPay <noreply@smartpay.mw>
 
 Mailpit's web UI is available at `http://localhost:8025` by default.
 
+You may use brevo to mimick production
+
 To verify the transporter can reach the SMTP server on startup, add a
 `verifyTransporter()` call in an `onModuleInit` hook:
 
@@ -149,7 +149,7 @@ async onModuleInit() {
 }
 ```
 
-Remove this in production or guard it behind a non-production check — a
+Will remove this in production or guard it behind a non-production check — a
 failed verify on startup will crash the application.
 
 ---
@@ -158,8 +158,8 @@ failed verify on startup will crash the application.
 
 | # | Limitation |
 |---|---|
-| 1 | Plain text only — no HTML templates. |
-| 2 | No retry logic — a transient SMTP failure is a permanent failure for that send. |
-| 3 | `sendVerificationCode` failure during registration is silently swallowed — the merchant is stuck without a code. |
-| 4 | No email queue — high send volume will block the event loop. Consider BullMQ + a worker for anything beyond low traffic. |
+| 1 | Plain text only — no HTML templates. will probably do that later otp test dont need a beefy email design for now |
+| 2 | No retry logic — a transient SMTP failure is a permanent failure for that send. will address today|
+| 3 | `sendVerificationCode` failure during registration is silently swallowed — the merchant is stuck without a code. Will address today|
+| 4 | No email queue — high send volume will block the event loop. sSolved using BullMQ + a worker for anything beyond low traffic. |
 | 5 | No delivery tracking — there is no record of whether an email was actually delivered. |

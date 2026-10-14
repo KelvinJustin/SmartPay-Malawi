@@ -1,39 +1,60 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
+import { DatabaseService } from '../database/database.service.js';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   // Dependency injection: configService is used to retrieve the JWT signing secret.
-  constructor(configService: ConfigService) {
-    super({
+  constructor(
+  configService: ConfigService,
+  private readonly databaseService: DatabaseService,
+) {
+  super({
+    jwtFromRequest: ExtractJwt.fromExtractors([
+      (request) => request?.cookies?.access_token ?? null,
+      ExtractJwt.fromAuthHeaderAsBearerToken(),
+    ]),
+    ignoreExpiration: false,
+    secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
+  });
+}
 
-      //extracts the jwt token from the browser cookies
-      jwtFromRequest: ExtractJwt.fromExtractors([
-        (request) => request?.cookies?.access_token ?? null,
-        ExtractJwt.fromAuthHeaderAsBearerToken(),
-      ]),
+  
+  async validate(payload: {
+    sub: string;
+    email: string;
+    jti: string;
+    exp: number;
+  }) {
+    // A token without these claims cannot be checked safely for revocation.
+    if (!payload.sub || !payload.jti || !payload.exp) {
+      throw new UnauthorizedException('Invalid authentication token');
+    }
 
-      // If false, the strategy will reject requests with expired tokens.
-      ignoreExpiration: false,
-
-      // This is the secret used to sign and verify the JWT. It must match
-      // the secret used by JwtService.signAsync().
-      secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
+    // Check whether this specific JWT has been revoked.
+    const revokedToken = await this.databaseService.revokedToken.findUnique({
+      where: {
+        jti: payload.jti,
+      },
+      select: {
+        id: true,
+      },
     });
-  }
 
-  async validate(payload: { sub: string; email: string }) {
-    // The JWT payload contains the claims from the JWT that was signed
-    // at login. This method extracts the claims and returns them as the
-    // authenticated identity, which will be attached to the Request object
-    // for downstream handlers, including the @UseGuards (JwtAuthGuard) and
-    // any route handler that needs the user's ID and email.
+    if (revokedToken) {
+      throw new UnauthorizedException('Token has been revoked');
+    }
 
+    // Passport attaches this identity to the request after validation.
     return {
       userId: payload.sub,
       email: payload.email,
     };
   }
+
 }

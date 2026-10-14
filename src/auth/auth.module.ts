@@ -1,55 +1,32 @@
 import { Module } from '@nestjs/common';
-import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
-import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 
-import { AuthService } from './auth.service.js';
-import { AuthController } from './auth.controller.js';
-import { JwtStrategy } from './jwt.strategy.js';
-import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { DatabaseModule } from '../database/database.module.js';
 import { EmailModule } from '../email/email.module.js';
 
+import { AuthController } from './auth.controller.js';
+import { AuthService } from './auth.service.js';
+import { JwtStrategy } from './jwt.strategy.js';
+
 @Module({
   imports: [
-    // Provide database access to the authentication service.
-    DatabaseModule,
-
-    // Make environment configuration available to this module.
     ConfigModule,
-
-    //email module
+    DatabaseModule,
     EmailModule,
-
-    // Configure Passport to use JWT authentication by default.
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-
-    // Configure JWT using the secret stored in environment variables.
+    PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        // Retrieve the JWT signing secret or throw an error if it is missing.
         secret: configService.getOrThrow<string>('JWT_SECRET'),
-
-        // Lifetime of generated access tokens. Read from JWT_EXPIRES_IN
-        // (e.g. "15m") and default to 15 minutes if it is not set.
-        // Keep this in sync with the cookie maxAge in auth.controller.ts.
-        signOptions: {
-          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ??
-            '15m') as NonNullable<JwtSignOptions['expiresIn']>,
-        },
+        signOptions: { expiresIn: '1d' },
       }),
     }),
   ],
-
-  // Register the controller that handles authentication HTTP requests.
   controllers: [AuthController],
-
-  // Register the services, JWT strategy, and guard used by authentication.
-  providers: [AuthService, JwtStrategy, JwtAuthGuard],
-
-  // Allow other modules to use these exported providers.
-  exports: [AuthService, JwtAuthGuard],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService],
 })
 export class AuthModule {}

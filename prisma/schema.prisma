@@ -36,6 +36,7 @@ model Merchant {
   updatedAt       DateTime       @updatedAt
 
   otpChallenges OtpChallenge[]
+  revokedTokens RevokedToken[]
 
   @@map("merchants")
 }
@@ -56,4 +57,17 @@ model OtpChallenge {
   @@index([merchantId, purpose, consumedAt])
   @@index([expiresAt])
   @@map("otp_challenges")
+}
+
+model RevokedToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  jti        String   @unique @db.Uuid
+  merchantId String   @db.Uuid
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("revoked_tokens")
 }

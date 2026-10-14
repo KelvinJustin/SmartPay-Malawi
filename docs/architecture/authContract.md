@@ -1,50 +1,61 @@
-# SmartPay Malawi — Frontend API Contract
+# SmartPay Malawi — Authentication API Contract
 
-**Document:** Authentication API  
-**Backend:** NestJS REST API  
-**Frontend:** Separate React application  
-**Base URL (development):** `http://localhost:3000`  
-**Authentication:** JWT stored in an HTTP-only cookie  
-**API prefix:** None, unless configured elsewhere in the backend
+**Document:** Authentication API Contract
+**Backend:** NestJS REST API
+**Frontend:** Separate React application
+**Development API URL:** `http://localhost:3000`
+**Authentication:** JWT in an HTTP-only cookie
 
-## 1. Authentication overview
+---
 
-SmartPay uses cookie-based JWT authentication.
+## 1. Authentication Overview
 
-After a merchant logs in successfully, the backend sends an `access_token` cookie. The browser stores the cookie and sends it automatically with eligible requests when credentials are enabled.
+SmartPay uses a **two-step MFA flow** followed by cookie-based JWT authentication.
+
+- **Step 1** (`POST /auth/login`): validates email/password and emails a one-time 6-digit code.
+- **Step 2** (`POST /auth/verify-login`): validates the OTP and issues the `access_token` HTTP-only cookie.
+
+Email must be verified via `POST /auth/verify-email` before login is permitted.
+
+The JWT strategy accepts tokens from two sources: the `access_token` cookie, or an `Authorization: Bearer <token>` header. Browser clients should rely on the cookie.
+
+### Endpoint Table
+
+| Method | Endpoint | Purpose | Auth Required |
+|---|---|---|---|
+| `POST` | `/auth/register` | Create a merchant account | No |
+| `POST` | `/auth/verify-email` | Verify email address with OTP | No |
+| `POST` | `/auth/login` | Step 1: validate credentials, send OTP | No |
+| `POST` | `/auth/verify-login` | Step 2: validate OTP, issue JWT cookie | No |
+| `GET` | `/auth/me` | Retrieve current merchant identity | Yes |
+| `POST` | `/auth/logout` | Clear the auth cookie | Yes |
+
+All endpoints are protected by `ArcjetGuard` (rate limiting, bot detection) at the controller level. `/auth/me` stacks `ArcjetGuard` then `JwtAuthGuard` explicitly — order matters, Arcjet runs first.
+
+### Frontend Security Requirements
 
 The frontend must **not**:
-
-- Store the JWT in `localStorage` or `sessionStorage`.
-- Expect the JWT in the login response body.
-- Attempt to read the HTTP-only cookie using JavaScript.
-- Assume that a merchant is authenticated simply because a login screen was submitted successfully.
+- Store JWTs in `localStorage` or `sessionStorage`.
+- Expect the JWT in a response body.
+- Attempt to read the HTTP-only cookie via JavaScript.
+- Assume authentication succeeded from step 1 of login alone — the cookie is only issued after step 2.
 
 The frontend must:
+- Include credentials on every request that sends or receives the cookie.
+- Call `GET /auth/me` on application start to restore authentication state.
+- Treat `401 Unauthorized` on any protected endpoint as an authentication failure.
+- Clear in-memory merchant identity after logout.
+- Distinguish authentication failures from network and server errors.
 
-- Send credentialed requests to the backend.
-- Call `GET /auth/me` when the application loads to restore the authentication state.
-- Treat a successful `/auth/me` response as authenticated.
-- Treat a `401 Unauthorized` response as unauthenticated.
-- Clear the frontend's in-memory merchant state after logout.
+---
 
-## 2. API endpoints
+## 2. Endpoint Specifications
 
-| Method | Endpoint | Purpose | Authentication |
-|---|---|---|---|
-| POST | `/auth/register` | Register a merchant | Not required |
-| POST | `/auth/login` | Authenticate a merchant and set the cookie | Not required |
-| GET | `/auth/me` | Retrieve the authenticated merchant identity | Required |
-| POST | `/auth/logout` | Clear the authentication cookie | Not required to clear the cookie |
+### 2.1 Register
 
-### 2.1 Register merchant
+**`POST /auth/register`**
 
-**Request**
-
-`POST /auth/register`
-
-Content-Type: `application/json`
-
+**Request body:**
 ```json
 {
   "name": "Example Business",
@@ -54,39 +65,71 @@ Content-Type: `application/json`
 }
 ```
 
-The request fields are:
-
-- `name`: Merchant or business name.
-- `email`: Merchant email address.
-- `password`: Password supplied during registration.
-- `phone`: Merchant contact number.
-
-**Successful response**
-
-The current backend returns the registration message and email. Standardize the message text before treating its exact wording as a permanent contract.
-
+**Successful response — `201 Created`:**
 ```json
 {
-  "message": "Registration successful",
+  "message": "Registration successful. Check your email for the verification code.",
   "email": "merchant@example.com"
 }
 ```
 
-**Expected errors**
+**Errors:**
 
-- `400 Bad Request`: Invalid request data, if DTO validation rejects it.
-- `409 Conflict`: Email is already registered.
+| Status | Meaning |
+|---|---|
+| `400 Bad Request` | Validation failed |
+| `409 Conflict` | Email or phone already registered |
 
-Registration does not automatically establish a login session. The frontend should direct the merchant to log in unless the backend is deliberately changed to authenticate immediately after registration.
+**Frontend behavior:**
+1. Validate fields before submitting.
+2. On success, inform the merchant to check their email and redirect to the verify-email step.
+3. Registration does not create an authenticated session.
 
-### 2.2 Login
+---
 
-**Request**
+### 2.2 Verify Email
 
-`POST /auth/login`
+**`POST /auth/verify-email`**
 
-Content-Type: `application/json`
+Must be completed before the merchant can log in.
 
+**Request body:**
+```json
+{
+  "email": "merchant@example.com",
+  "code": "123456"
+}
+```
+
+**Successful response — `200 OK`:**
+```json
+{
+  "message": "Email verified successfully"
+}
+```
+
+If the email is already verified, the backend returns `{ "message": "Email is already verified" }` — this is treated as success.
+
+**Errors:**
+
+| Status | Meaning |
+|---|---|
+| `400 Bad Request` | Validation failed |
+| `401 Unauthorized` | Code invalid, expired, or 5 failed attempts reached |
+
+**Notes:**
+- Codes are valid for 10 minutes.
+- After 5 failed attempts the challenge is locked — the merchant must re-register or request a new code.
+
+---
+
+### 2.3 Login — Step 1
+
+**`POST /auth/login`**
+
+Validates email and password, then emails a 6-digit OTP to the merchant. **No cookie is issued here.**
+
+**Request body:**
 ```json
 {
   "email": "merchant@example.com",
@@ -94,39 +137,79 @@ Content-Type: `application/json`
 }
 ```
 
-**Successful response**
-
-HTTP `200 OK`
-
+**Successful response — `201 Created`:**
 ```json
 {
-  "message": "Login successful"
+  "message": "Login verification code sent",
+  "email": "merchant@example.com"
 }
 ```
 
-The backend also sends a `Set-Cookie` response header containing the `access_token` cookie.
+**Errors:**
 
-The JWT is not returned in the JSON response.
+| Status | Meaning |
+|---|---|
+| `400 Bad Request` | Validation failed |
+| `401 Unauthorized` | Invalid credentials, or email not yet verified |
+| `503 Service Unavailable` | OTP email could not be sent |
 
-**Expected errors**
+**Frontend behavior:**
+1. Submit credentials with `credentials: 'include'`.
+2. On success, advance the UI to the OTP entry step — do not navigate to the dashboard yet.
+3. On `401`, display a generic invalid credentials message (do not distinguish "wrong password" from "no account").
+4. On `503`, tell the merchant the code could not be sent and allow retry.
 
-- `400 Bad Request`: Invalid request data, if DTO validation rejects it.
-- `401 Unauthorized`: Invalid email or password.
+---
 
-After successful login, the frontend should request `GET /auth/me` to obtain the authenticated merchant identity.
+### 2.4 Login — Step 2 (Verify Login)
 
-### 2.3 Get current merchant
+**`POST /auth/verify-login`**
 
-**Request**
+Validates the OTP. On success the backend issues the `access_token` cookie.
 
-`GET /auth/me`
+**Request body:**
+```json
+{
+  "email": "merchant@example.com",
+  "code": "123456"
+}
+```
 
-The browser must send the authentication cookie. The backend protects this endpoint using `JwtAuthGuard`.
+**Successful response — `201 Created`** + `Set-Cookie: access_token=<jwt>`:
+```json
+{
+  "accessToken": "eyJ..."
+}
+```
 
-**Successful response**
+> ⚠️ The `accessToken` field in the body is a known inconsistency — the contract intention is cookie-only delivery. The frontend should rely on the cookie and ignore the body token. Confirm with the backend team whether the body field will be removed.
 
-HTTP `200 OK`
+**Errors:**
 
+| Status | Meaning |
+|---|---|
+| `400 Bad Request` | Validation failed |
+| `401 Unauthorized` | Code invalid, expired, or 5 failed attempts reached |
+
+**Notes:**
+- Codes expire after 10 minutes.
+- After 5 failed attempts the challenge is locked.
+- Calling `POST /auth/login` again invalidates any outstanding code and issues a fresh one.
+
+**Frontend behavior:**
+1. Submit with `credentials: 'include'`.
+2. On success, call `GET /auth/me` to retrieve the merchant identity, then navigate to the dashboard.
+3. Do not parse or store the `accessToken` body field — use the cookie.
+
+---
+
+### 2.5 Get Current Merchant
+
+**`GET /auth/me`**
+
+Returns the identity attached to the current JWT. Called on app start to restore session state.
+
+**Successful response — `200 OK`:**
 ```json
 {
   "userId": "0664cc3a-5a3e-43ec-8fd3-9f04ed3cf31d",
@@ -134,133 +217,167 @@ HTTP `200 OK`
 }
 ```
 
-This is the current identity payload returned by the backend. Additional profile fields can be added later through an agreed API change.
+> Note: `jti` and `exp` are present in the JWT payload but are stripped by `JwtStrategy.validate()` before being attached to `request.user`. They are not returned here.
 
-**Expected errors**
+**Errors:**
 
-- `401 Unauthorized`: Cookie is missing, JWT is invalid, or JWT has expired.
+| Status | Meaning |
+|---|---|
+| `401 Unauthorized` | Cookie missing, token invalid, token expired, or token revoked |
+| `500 Internal Server Error` | Unexpected backend failure |
 
-**Frontend behavior**
+**Session restoration behavior:**
+1. Show a loading state before the check completes.
+2. Call `GET /auth/me` with `credentials: 'include'` on every app start / page refresh.
+3. `200` → store the identity in memory, render the protected route.
+4. `401` → mark session unauthenticated, render the public route.
+5. Network or `5xx` error → handle separately; do not treat as a session expiry.
 
-On application startup or page refresh:
+---
 
-1. Show a loading state while checking the session.
-2. Call `GET /auth/me`.
-3. If successful, set the merchant as authenticated.
-4. If the response is `401`, set the merchant as unauthenticated and show the login screen or public page.
-5. Handle network errors separately from authentication failures.
+### 2.6 Logout
 
-A network failure should not automatically be treated as proof that the session has expired.
+**`POST /auth/logout`**
 
-### 2.4 Logout
+Clears the `access_token` cookie. Requires a valid JWT.
 
-**Request**
+> ⚠️ **Known issue:** The controller clears the cookie and returns early — it does not call `authService.logout()`, so the JWT is **not added to the revoked-token table**. A copied token remains usable until it expires naturally. Raise with the backend team.
 
-`POST /auth/logout`
-
-No request body is required.
-
-**Successful response**
-
-HTTP `200 OK`
-
+**Successful response — `200 OK`:**
 ```json
 {
   "message": "Logged out successfully"
 }
 ```
 
-The backend must clear the `access_token` cookie using matching cookie settings.
+**Errors:**
 
-**Frontend behavior**
+| Status | Meaning |
+|---|---|
+| `401 Unauthorized` | No valid JWT present |
 
-After a successful logout response:
+**Frontend behavior:**
+1. Send `POST /auth/logout` with `credentials: 'include'`.
+2. On success, clear in-memory merchant identity and navigate to the login page.
+3. Do not attempt to delete or overwrite the cookie from JavaScript.
 
-1. Clear the in-memory merchant identity.
-2. Update the UI to the logged-out state.
-3. Navigate to the public page or login screen.
+---
 
-The frontend must not assume that clearing its own state removes the browser cookie; the backend is responsible for clearing it.
+## 3. Cookie Configuration
 
-**Note:** Cookie removal does not revoke a previously copied JWT. The current access-token design relies on expiry unless server-side revocation is implemented.
-
-## 3. Cookie configuration
-
-The backend currently intends to use these settings:
-
-| Property | Value | Purpose |
+| Property | Development | Production |
 |---|---|---|
-| Name | `access_token` | Cookie containing the JWT |
-| `httpOnly` | `true` | Prevents JavaScript from reading the token |
-| `secure` | `false` in local development; `true` in production | Requires HTTPS in production |
-| `sameSite` | `lax` | Provides some cross-site request protection |
-| `path` | `/` | Makes the cookie available throughout the API host |
-| `maxAge` | 15 minutes | Cookie lifetime |
+| Name | `access_token` | `access_token` |
+| `httpOnly` | `true` | `true` |
+| `secure` | `false` | `true` |
+| `sameSite` | `lax` | `lax` (confirm for deployment topology) |
+| `path` | `/` | `/` |
 
-The JWT itself must also expire after 15 minutes to match the intended access-token lifetime.
+Cookie lifetime and JWT expiration are separate controls — both must be configured to match the intended session duration.
 
-A cookie does not make the session permanent. Refresh-token support is a separate future enhancement.
+---
 
-## 4. Required frontend request configuration
+## 4. Frontend Request Configuration
 
-All requests that need to send or receive the authentication cookie must include browser credentials.
+### 4.1 API Base URL
 
-For `fetch`, use:
-
-```javascript
-credentials: 'include'
+```env
+VITE_API_URL=http://localhost:3000
 ```
 
-This applies to login, session restoration, logout, and any protected endpoint that uses cookie authentication.
+```typescript
+const API_URL = import.meta.env.VITE_API_URL;
+```
 
-The frontend must use the correct API base URL:
+### 4.2 Sending Credentials
 
-- **Development:** `http://localhost:3000`
-- **Production:** The deployed SmartPay API URL agreed by the team.
+All requests that send or receive the auth cookie must include:
 
-The backend must allow the exact frontend origin through CORS and enable credentials. Credentialed CORS cannot use `Access-Control-Allow-Origin: *`.
+```typescript
+const response = await fetch(`${API_URL}/auth/me`, {
+  method: 'GET',
+  credentials: 'include',
+});
+```
 
-## 5. Error-handling contract
+Apply `credentials: 'include'` to: login (both steps), verify-email, session restoration, logout, and all protected API requests.
 
-| HTTP status | Meaning | Suggested frontend behavior |
+### 4.3 CORS Requirements
+
+The backend must:
+- Allow the exact frontend origin (e.g. `http://localhost:5173` in development).
+- Enable credentialed requests (`Access-Control-Allow-Credentials: true`).
+- Never use `Access-Control-Allow-Origin: *` for credentialed requests.
+
+---
+
+## 5. Error Handling
+
+| Status | Meaning | Frontend behavior |
 |---|---|---|
-| `200 OK` | Request succeeded | Process the response |
-| `201 Created` | Resource created, such as registration under NestJS defaults | Process the response |
-| `400 Bad Request` | Invalid request data | Display validation feedback |
-| `401 Unauthorized` | Missing, invalid, or expired authentication | Treat as unauthenticated for protected requests |
-| `409 Conflict` | Duplicate email during registration | Ask the user to use another email or log in |
-| `500 Internal Server Error` | Unexpected backend failure | Show a generic error and allow retry |
+| `200 OK` | Success | Process response |
+| `201 Created` | Resource created (NestJS POST default) | Process response |
+| `400 Bad Request` | Validation failed | Display field errors |
+| `401 Unauthorized` | Auth missing or invalid | Handle per endpoint |
+| `409 Conflict` | Duplicate registration | Offer login or different email |
+| `503 Service Unavailable` | OTP email send failed | Prompt retry |
+| `500 Internal Server Error` | Unexpected failure | Generic error, allow retry |
 
-The frontend should not expose raw backend stack traces or sensitive server error details to users.
+---
 
-## 6. Current scope and future enhancements
+## 6. Known Issues and Deviations from Original Contract
 
-The current authentication contract covers merchant registration, login, identity restoration, and logout.
+| # | Issue | Location |
+|---|---|---|
+| 1 | Login is two steps (step 1 + step 2); original contract described a single-step login | `POST /auth/login`, `POST /auth/verify-login` |
+| 2 | `verifyLogin` returns `{ accessToken }` in the body alongside the cookie | `POST /auth/verify-login` |
+| 3 | Controller logout does not call `authService.logout()` — revoked-token table is never written | `POST /auth/logout` |
+| 4 | `jti` is absent from `request.user` but `authService.logout()` expects it — would panic if wired up | `AuthService.logout`, `AuthController.logout` |
+| 5 | `verifyEmail` uses unguarded `update()` on failed attempts; `verifyLogin` uses the safer guarded `updateMany()` | `AuthService.verifyEmail` |
 
-Not yet included in this contract:
+---
 
-- Refresh-token rotation and revocation.
-- Password reset and email verification.
-- Merchant profile updates.
-- Merchant approval/status endpoints.
-- API-key management.
-- Payment creation, checkout, transaction status, and webhook management.
+## 7. Scope
 
-These should be documented as separate API contracts when the backend endpoints are designed.
+### Implemented and covered
+- Merchant registration
+- Email verification (OTP)
+- Two-step MFA login
+- Cookie-based JWT authentication
+- Session restoration (`/auth/me`)
+- Logout (cookie clearing)
+- Token revocation table (implemented in service, not yet wired to controller)
 
-## 7. Acceptance tests
+### Not yet covered
+- Password reset
+- Refresh-token rotation and revocation
+- Merchant profile updates
+- Merchant approval and account-status management
+- API-key management
+- Payment creation and hosted checkout
+- Transaction status and reconciliation
+- Webhook management
+- Merchant settlements and withdrawals
 
-The frontend/backend integration is ready for initial testing when:
+---
+
+## 8. Acceptance Tests
 
 - [ ] A merchant can register successfully.
-- [ ] Duplicate registration returns `409 Conflict`.
-- [ ] Valid login sets the HTTP-only cookie.
-- [ ] Invalid login returns `401 Unauthorized`.
-- [ ] `/auth/me` returns the merchant identity with a valid cookie.
-- [ ] Refreshing the page restores the merchant identity when the JWT is still valid.
-- [ ] Missing or expired authentication returns `401` on protected endpoints.
+- [ ] Invalid registration data returns `400`.
+- [ ] Duplicate email or phone returns `409`.
+- [ ] Unverified merchant cannot log in — receives `401`.
+- [ ] Valid email verification code marks the account verified.
+- [ ] Invalid or expired verification code returns `401`.
+- [ ] Valid credentials trigger an OTP email (step 1).
+- [ ] Invalid credentials return `401` with a generic message.
+- [ ] Valid OTP issues the `access_token` cookie (step 2).
+- [ ] Invalid or expired OTP returns `401`.
+- [ ] 5 consecutive wrong OTPs lock the challenge.
+- [ ] `/auth/me` returns merchant identity with a valid cookie.
+- [ ] Page refresh restores session while the token is valid.
+- [ ] Missing, invalid, or expired token returns `401` on protected endpoints.
 - [ ] Logout clears the cookie.
 - [ ] `/auth/me` returns `401` after logout.
-- [ ] The browser sends cookies correctly from the configured React origin.
-
-**Security note:** Before production, implement and test an explicit CSRF protection strategy for state-changing cookie-authenticated endpoints. Confirm cookie settings for the actual production domain and HTTPS deployment.
+- [ ] Network failures are handled separately from auth failures.
+- [ ] Credentialed CORS works from the configured React origin.

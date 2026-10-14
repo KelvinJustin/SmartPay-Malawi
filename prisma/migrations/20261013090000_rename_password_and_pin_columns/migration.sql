@@ -1,13 +1,4 @@
--- Align the database with prisma/schema.prisma:
---   password -> passwordHash
---   PIN      -> pinHash   (and drop its unique index; hashes should not be unique)
---
--- RENAME COLUMN keeps any existing data, unlike the drop + add that
--- `prisma migrate dev` would generate on its own.
-
--- DropIndex
-DROP INDEX "merchants_PIN_key";
-
--- RenameColumn
-ALTER TABLE "merchants" RENAME COLUMN "password" TO "passwordHash";
-ALTER TABLE "merchants" RENAME COLUMN "PIN" TO "pinHash";
+-- No-op migration.
+-- The passwordHash and pinHash column changes were already
+-- performed by 20261012192539_add_email_verification_otp.
+-- This migration is retained to preserve migration history.

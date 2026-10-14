@@ -7,6 +7,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { MerchantsModule } from './merchants/merchants.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { EmailModule } from './email/email.module.js';
+import { ArcjetModule } from './arcjet/arcjet.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -24,6 +25,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     MerchantsModule,
     AuthModule,
     EmailModule,
+    ArcjetModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,34 +1,79 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-import { MerchantsService } from './merchants.service.js';
-import { CreateMerchantDto } from './dto/create-merchant.dto.js';
-import { UpdateMerchantDto } from './dto/update-merchant.dto.js';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 
+import { MerchantsService } from './merchants.service.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
+import { AddSettlementAccountDto } from './dto/add-settlement-account.dto.js';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+
+@UseGuards(JwtAuthGuard)
 @Controller('merchants')
 export class MerchantsController {
   constructor(private readonly merchantsService: MerchantsService) {}
 
-  @Post()
-  create(@Body() createMerchantDto: CreateMerchantDto) {
-    return this.merchantsService.create(createMerchantDto);
+  // ============================================================
+  // PROFILE
+  // ============================================================
+
+  // GET /merchants/profile
+  @Get('profile')
+  getMyProfile(@CurrentUser('userId') merchantId: string) {
+    return this.merchantsService.getMyProfile(merchantId);
   }
 
-  @Get()
-  findAll() {
-    return this.merchantsService.findAll();
+  // PATCH /merchants/profile
+  @Patch('profile')
+  updateProfile(
+    @CurrentUser('userId') merchantId: string,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.merchantsService.updateProfile(merchantId, dto);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.merchantsService.findOne(+id);
+  // ============================================================
+  // SUBMISSION
+  // ============================================================
+
+  // POST /merchants/profile/submit
+  @Post('profile/submit')
+  submitForReview(@CurrentUser('userId') merchantId: string) {
+    return this.merchantsService.submitForReview(merchantId);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateMerchantDto: UpdateMerchantDto) {
-    return this.merchantsService.update(+id, updateMerchantDto);
+  // ============================================================
+  // SETTLEMENT ACCOUNTS
+  // ============================================================
+
+  // GET /merchants/settlement-accounts
+  @Get('settlement-accounts')
+  getSettlementAccounts(@CurrentUser('userId') merchantId: string) {
+    return this.merchantsService.getSettlementAccounts(merchantId);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.merchantsService.remove(+id);
+  // POST /merchants/settlement-accounts
+  @Post('settlement-accounts')
+  addSettlementAccount(
+    @CurrentUser('userId') merchantId: string,
+    @Body() dto: AddSettlementAccountDto,
+  ) {
+    return this.merchantsService.addSettlementAccount(merchantId, dto);
+  }
+
+  // DELETE /merchants/settlement-accounts/:id
+  @Delete('settlement-accounts/:id')
+  removeSettlementAccount(
+    @CurrentUser('userId') merchantId: string,
+    @Param('id') accountId: string,
+  ) {
+    return this.merchantsService.removeSettlementAccount(merchantId, accountId);
   }
 }

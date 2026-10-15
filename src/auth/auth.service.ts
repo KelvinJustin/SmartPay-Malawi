@@ -25,22 +25,17 @@ import { UpdateAuthDto } from './dto/update-auth.dto.js';
 
 @Injectable()
 export class AuthService {
-  // Injected services: database access, JWT signing, transactional email,
-  // and typed config (secrets never live in source).
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   // ============================================================
   // SHARED OTP UTILITIES
   // ============================================================
 
-  // OTPs are never stored in plaintext — only this keyed HMAC hash.
-  // Binding merchantId into the input means a hash stolen from one account
-  // can't be replayed against another (no cross-account code reuse).
   private hashOtp(merchantId: string, code: string): string {
     return createHmac(
       'sha256',
@@ -51,72 +46,82 @@ export class AuthService {
   }
 
   // ============================================================
-  // MERCHANT REGISTRATION
+  // REGISTRATION
   // ============================================================
 
   async register(registerAuthDto: RegisterAuthDto) {
     const { name, email, password, phone } = registerAuthDto;
 
-    // One check covers both unique fields; a match on either blocks signup.
     const existingUser = await this.databaseService.merchant.findFirst({
-      where: {
-        OR: [{ email }, { phone }],
-      },
+      where: { OR: [{ email }, { phone }] },
     });
 
     if (existingUser) {
-      throw new ConflictException(
-        'Email or phone number is already registered',
-      );
+      throw new ConflictException('Email or phone number is already registered');
     }
 
-    // bcrypt stores the salt inside the hash, so cost comes from the env.
-    // Note: the rounds value must be an integer — bcrypt throws on a
-    // non-numeric value like an empty string.
     const hashedPassword = await bcrypt.hash(
       password,
       Number(process.env.ENCRYPTION_SALT),
     );
 
-    const user = await this.databaseService.merchant.create({
-      data: {
-        name,
-        email,
-        passwordHash: hashedPassword,
-        phone,
-      },
-    });
-
-    // cryptographically secure 6-digit code (randomInt, never Math.random)
-    const code = randomInt(0, 1_000_000)
-      .toString()
-      .padStart(6, '0');
-
-    // Codes live for 10 minutes.
+    const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Persist the hash, not the code — a DB leak must not reveal live OTPs.
-    await this.databaseService.otpChallenge.create({
-      data: {
-        merchantId: user.id,
-        purpose: 'EMAIL_VERIFICATION',
-        codeHash: this.hashOtp(user.id, code),
-        expiresAt,
-      },
+    const user = await this.databaseService.$transaction(async (tx) => {
+      const created = await tx.merchant.create({
+        data: { name, email, passwordHash: hashedPassword, phone },
+      });
+
+      await tx.otpChallenge.create({
+        data: {
+          merchantId: created.id,
+          purpose: 'EMAIL_VERIFICATION',
+          codeHash: this.hashOtp(created.id, code),
+          expiresAt,
+        },
+      });
+
+      const user = await this.databaseService.$transaction(async (tx) => {
+        const created = await tx.merchant.create({
+          data: { name, email, passwordHash: hashedPassword, phone },
+        });
+
+        await tx.otpChallenge.create({
+          data: {
+            merchantId: created.id,
+            purpose: 'EMAIL_VERIFICATION',
+            codeHash: this.hashOtp(created.id, code),
+            expiresAt,
+          },
+        });
+
+        // Auto-create a blank profile so it always exists after registration.
+        // The merchant fills in the details later — we just need the row to exist.
+        await tx.merchantProfile.create({
+          data: {
+            merchantId: created.id,
+            businessName: '',
+            businessType: 'INDIVIDUAL',
+            accountStatus: 'PENDING_SUBMISSION',
+          },
+        });
+
+        try {
+          await this.emailService.sendVerificationCode(email, code);
+        } catch {
+          throw new ServiceUnavailableException(
+            'Registration succeeded but we could not send your verification ' +
+            'email. Please try again.',
+          );
+        }
+
+        return created;
+      });
     });
-
-    // Registration isn't complete until this code is verified.
-    await this.emailService.sendVerificationCode(user.email, code);
-
-    return {
-      message:
-        'Registration successful. Check your email for the verification code.',
-      email: user.email,
-    };
   }
-
   // ============================================================
-  // MERCHANT LOGIN — FIRST FACTOR
+  // LOGIN — FIRST FACTOR
   // ============================================================
 
   async login(loginAuthDto: LoginAuthDto) {
@@ -126,8 +131,6 @@ export class AuthService {
       where: { email },
     });
 
-    // Deliberately identical messages for "no account" and "wrong password":
-    // distinguishing them would let attackers enumerate registered emails.
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -138,33 +141,24 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Password alone is never enough — verified email is required first.
     if (!user.emailVerifiedAt) {
       throw new UnauthorizedException(
         'Please verify your email before logging in',
       );
     }
 
-    // Retire any outstanding LOGIN codes so only the newest one can win.
     await this.databaseService.otpChallenge.updateMany({
       where: {
         merchantId: user.id,
         purpose: 'LOGIN',
         consumedAt: null,
       },
-      data: {
-        consumedAt: new Date(),
-      },
+      data: { consumedAt: new Date() },
     });
 
-    // Fresh 6-digit code for the second factor.
-    const code = randomInt(0, 1_000_000)
-      .toString()
-      .padStart(6, '0');
-
+    const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Write the challenge first; the try/catch below handles send failure.
     const challenge = await this.databaseService.otpChallenge.create({
       data: {
         merchantId: user.id,
@@ -177,7 +171,6 @@ export class AuthService {
     try {
       await this.emailService.sendLoginCode(user.email, code);
     } catch {
-      // SMTP failed → burn the code so it can never be verified later.
       await this.databaseService.otpChallenge.update({
         where: { id: challenge.id },
         data: { consumedAt: new Date() },
@@ -188,7 +181,6 @@ export class AuthService {
       );
     }
 
-    // No token here — the JWT is minted only in verifyLogin, after both factors pass.
     return {
       message: 'Login verification code sent',
       email: user.email,
@@ -196,7 +188,7 @@ export class AuthService {
   }
 
   // ============================================================
-  // MERCHANT LOGIN — SECOND FACTOR
+  // LOGIN — SECOND FACTOR
   // ============================================================
 
   async verifyLogin(dto: VerifyLoginDto) {
@@ -206,15 +198,12 @@ export class AuthService {
       where: { email },
     });
 
-    // Same generic failure message throughout this method — a verifier must
-    // never reveal whether the account, the challenge, or the code was wrong.
     if (!merchant || !merchant.emailVerifiedAt) {
       throw new UnauthorizedException(
         'Invalid or expired login verification code',
       );
     }
 
-    // Newest unused LOGIN challenge only; older ones were retired in login().
     const challenge = await this.databaseService.otpChallenge.findFirst({
       where: {
         merchantId: merchant.id,
@@ -224,7 +213,6 @@ export class AuthService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Gate on existence, expiry, and the 5-attempt lock before any hashing.
     if (
       !challenge ||
       challenge.expiresAt.getTime() <= Date.now() ||
@@ -237,16 +225,12 @@ export class AuthService {
 
     const submittedHash = this.hashOtp(merchant.id, code);
 
-    // timingSafeEqual: equal-length buffers compared in constant time,
-    // so response time can't leak how much of the hash matched.
     const matches = timingSafeEqual(
       Buffer.from(submittedHash, 'hex'),
       Buffer.from(challenge.codeHash, 'hex'),
     );
 
     if (!matches) {
-      // The guarded where-clause keeps attempts from climbing past 5 and
-      // skips challenges already consumed by a racing request.
       await this.databaseService.otpChallenge.updateMany({
         where: {
           id: challenge.id,
@@ -254,9 +238,7 @@ export class AuthService {
           attempts: { lt: 5 },
           expiresAt: { gt: new Date() },
         },
-        data: {
-          attempts: { increment: 1 },
-        },
+        data: { attempts: { increment: 1 } },
       });
 
       throw new UnauthorizedException(
@@ -264,9 +246,6 @@ export class AuthService {
       );
     }
 
-    // Atomic consume: the conditional where-clause (unconsumed, unlocked,
-    // unexpired, hash matches) means a concurrent twin request updating the
-    // same row makes count = 0 for the loser — one code, one redemption.
     const consumed = await this.databaseService.otpChallenge.updateMany({
       where: {
         id: challenge.id,
@@ -275,21 +254,15 @@ export class AuthService {
         attempts: { lt: 5 },
         expiresAt: { gt: new Date() },
       },
-      data: {
-        consumedAt: new Date(),
-      },
+      data: { consumedAt: new Date() },
     });
 
     if (consumed.count !== 1) {
-      // Lost the race or the challenge was invalidated between read and write.
       throw new UnauthorizedException(
         'Invalid or expired login verification code',
       );
     }
 
-    
-    // Both factors passed — now (and only now) issue the token.
-    // The jti uniquely identifies this individual JWT for server-side revocation.
     const payload = {
       sub: merchant.id,
       email: merchant.email,
@@ -302,7 +275,7 @@ export class AuthService {
   }
 
   // ============================================================
-  // EMAIL VERIFICATION
+  // EMAIL VERIFICATION (auto-login on success)
   // ============================================================
 
   async verifyEmail(dto: VerifyEmailDto) {
@@ -316,9 +289,17 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired verification code');
     }
 
-    // Idempotent success — re-verifying an already-verified email is fine.
+    // Already verified — issue a token so they aren't left stranded.
     if (merchant.emailVerifiedAt) {
-      return { message: 'Email is already verified' };
+      const payload = {
+        sub: merchant.id,
+        email: merchant.email,
+        jti: randomUUID(),
+      };
+      return {
+        message: 'Email already verified',
+        accessToken: await this.jwtService.signAsync(payload),
+      };
     }
 
     const challenge = await this.databaseService.otpChallenge.findFirst({
@@ -346,32 +327,49 @@ export class AuthService {
     );
 
     if (!matches) {
-      // ⚠️ Unlike verifyLogin, this uses update() without guards — a request
-      // racing a successful verify could still push attempts past 5 on a
-      // consumed row (harmless but noisy). Prefer the guarded updateMany()
-      // pattern from verifyLogin for symmetry.
-      await this.databaseService.otpChallenge.update({
-        where: { id: challenge.id },
+      await this.databaseService.otpChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          consumedAt: null,
+          attempts: { lt: 5 },
+          expiresAt: { gt: new Date() },
+        },
         data: { attempts: { increment: 1 } },
       });
 
       throw new UnauthorizedException('Invalid or expired verification code');
     }
 
-    // Transaction: consume the code and flip the flag together — a crash
-    // midway can't leave "verified but code still redeemable" (or vice versa).
-    await this.databaseService.$transaction([
-      this.databaseService.otpChallenge.update({
-        where: { id: challenge.id },
-        data: { consumedAt: new Date() },
-      }),
-      this.databaseService.merchant.update({
-        where: { id: merchant.id },
-        data: { emailVerifiedAt: new Date() },
-      }),
-    ]);
+    const consumed = await this.databaseService.otpChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        codeHash: submittedHash,
+        consumedAt: null,
+        attempts: { lt: 5 },
+        expiresAt: { gt: new Date() },
+      },
+      data: { consumedAt: new Date() },
+    });
 
-    return { message: 'Email verified successfully' };
+    if (consumed.count !== 1) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    await this.databaseService.merchant.update({
+      where: { id: merchant.id },
+      data: { emailVerifiedAt: new Date() },
+    });
+
+    const payload = {
+      sub: merchant.id,
+      email: merchant.email,
+      jti: randomUUID(),
+    };
+
+    return {
+      message: 'Email verified successfully',
+      accessToken: await this.jwtService.signAsync(payload),
+    };
   }
 
   // ============================================================
@@ -379,32 +377,64 @@ export class AuthService {
   // ============================================================
 
   async logout(user: {
-  userId: string;
-  jti: string;
-  exp: number;
-}) {
-  await this.databaseService.revokedToken.create({
-    data: {
-      jti: user.jti,
-      merchantId: user.userId,
-      expiresAt: new Date(user.exp * 1000),
-    },
-  });
+    userId: string;
+    jti: string;
+    exp: number;
+  }) {
+    await this.databaseService.revokedToken.create({
+      data: {
+        jti: user.jti,
+        merchantId: user.userId,
+        expiresAt: new Date(user.exp * 1000),
+      },
+    });
 
-  return { message: 'Logged out successfully' };
-}
+    return { message: 'Logged out successfully' };
+  }
 
   // ============================================================
-  // GENERATED NESTJS PLACEHOLDERS — safe to delete if unused
+  // PLACEHOLDERS
   // ============================================================
 
-  // TODO: Replace this scaffold with the actual update operation when needed.
   update(id: number, updateAuthDto: UpdateAuthDto) {
     return `This action updates a #${id} auth`;
   }
 
-  // TODO: Replace this scaffold with the actual deletion operation when needed.
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+  // Soft-delete the merchant account. We never hard-delete because
+  // financial records, audit trails, and KYC documents must remain
+  // intact for reconciliation. Setting deletedAt makes the account
+  // unreachable without destroying any trace of it.
+  //
+  // We also suspend the profile so it cannot be approved or used
+  // for payments even if someone finds a way to reference it.
+  async deleteAccount(userId: string) {
+    const merchant = await this.databaseService.merchant.findUnique({
+      where: { id: userId },
+      include: { profile: true },
+    });
+
+    if (!merchant || merchant.deletedAt) {
+      throw new UnauthorizedException('Account not found');
+    }
+
+    await this.databaseService.$transaction(async (tx) => {
+      // Mark the merchant account as deleted.
+      await tx.merchant.update({
+        where: { id: userId },
+        data: { deletedAt: new Date() },
+      });
+
+      // If a profile exists, suspend it so it can't be approved
+      // or used for payouts. We don't delete it — it stays for
+      // audit and financial reconciliation purposes.
+      if (merchant.profile) {
+        await tx.merchantProfile.update({
+          where: { merchantId: userId },
+          data: { accountStatus: 'SUSPENDED' },
+        });
+      }
+    });
+
+    return { message: 'Account deleted successfully' };
   }
 }

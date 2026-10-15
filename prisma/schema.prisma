@@ -3,6 +3,7 @@
 
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
+
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -11,6 +12,10 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ============================================================
+// EXISTING AUTHENTICATION ENUMS — PRESERVED
+// ============================================================
 
 enum MerchantStatus {
   PENDING
@@ -23,6 +28,53 @@ enum OtpPurpose {
   LOGIN
 }
 
+// ============================================================
+// NEW MERCHANT ONBOARDING ENUMS
+// ============================================================
+
+enum AccountStatus {
+  PENDING_SUBMISSION
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum BusinessType {
+  INDIVIDUAL
+  SOLE_TRADER
+  PARTNERSHIP
+  LIMITED_COMPANY
+  NGO
+}
+
+enum DocumentType {
+  NATIONAL_ID_FRONT
+  NATIONAL_ID_BACK
+  BUSINESS_REGISTRATION
+  TAX_CERTIFICATE
+  PROOF_OF_ADDRESS
+  DIRECTOR_ID
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum SettlementMethod {
+  AIRTEL_MONEY
+  TNM_MPAMBA
+  BANK_TRANSFER
+}
+
+// ============================================================
+// EXISTING MERCHANT MODEL — AUTH FIELDS PRESERVED
+// ============================================================
+
 model Merchant {
   id              String         @id @default(uuid()) @db.Uuid
   name            String
@@ -34,12 +86,22 @@ model Merchant {
   emailVerifiedAt DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?      @db.Timestamp(3) // Soft delete timestamp
 
+  // Existing authentication relations
   otpChallenges OtpChallenge[]
   revokedTokens RevokedToken[]
 
+  // New optional onboarding relation.
+  // Registration does not require a profile.
+  profile MerchantProfile?
+
   @@map("merchants")
 }
+
+// ============================================================
+// EXISTING OTP MODEL — PRESERVED
+// ============================================================
 
 model OtpChallenge {
   id         String     @id @default(uuid()) @db.Uuid
@@ -59,6 +121,10 @@ model OtpChallenge {
   @@map("otp_challenges")
 }
 
+// ============================================================
+// EXISTING TOKEN REVOCATION MODEL — PRESERVED
+// ============================================================
+
 model RevokedToken {
   id         String   @id @default(uuid()) @db.Uuid
   jti        String   @unique @db.Uuid
@@ -70,4 +136,141 @@ model RevokedToken {
 
   @@index([expiresAt])
   @@map("revoked_tokens")
+}
+
+// ============================================================
+// NEW MERCHANT PROFILE / BUSINESS ONBOARDING
+// ============================================================
+
+model MerchantProfile {
+  id         String @id @default(uuid()) @db.Uuid
+  merchantId String @unique @db.Uuid
+
+  // Business identity
+  businessName           String
+  tradingName            String?
+  businessType           BusinessType
+  businessRegistrationNo String?
+  taxIdentificationNo    String?
+  merchantCategoryCode   String?
+  industryDescription    String?
+
+  // Contact and location
+  supportEmail  String?
+  supportPhone  String?
+  websiteUrl    String?
+  addressLine1  String?
+  addressLine2  String?
+  city          String?
+  district      String?
+  country       String   @default("MW")
+
+  // Branding
+  logoUrl String?
+
+  // Onboarding and approval
+  accountStatus   AccountStatus @default(PENDING_SUBMISSION)
+  rejectionReason String?
+  approvedAt      DateTime?
+  approvedById    String?
+  submittedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One profile belongs to one merchant.
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  documents         MerchantDocument[]
+  settlementAccounts SettlementAccount[]
+  reviewHistory     MerchantReviewHistory[]
+
+  @@map("merchant_profiles")
+}
+
+// ============================================================
+// NEW KYC DOCUMENTS
+// ============================================================
+
+model MerchantDocument {
+  id        String         @id @default(uuid()) @db.Uuid
+  profileId String         @db.Uuid
+  type      DocumentType
+  status    DocumentStatus @default(PENDING)
+
+  // Store files in private object storage.
+  // fileKey identifies the stored object.
+  fileUrl       String
+  fileKey       String
+  mimeType      String
+  fileSizeBytes Int
+
+  rejectionNote String?
+  reviewedAt    DateTime?
+  reviewedById  String?
+  expiresAt     DateTime?
+
+  uploadedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  profile MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, type]) 
+  @@index([profileId, type])
+  @@index([status])
+  @@map("merchant_documents")
+}
+
+// ============================================================
+// NEW SETTLEMENT / PAYOUT ACCOUNTS
+// ============================================================
+
+model SettlementAccount {
+  id        String           @id @default(uuid()) @db.Uuid
+  profileId String           @db.Uuid
+  method    SettlementMethod
+  isPrimary Boolean          @default(false)
+  label     String?
+
+  // Mobile money details
+  phoneNumber String?
+
+  // Bank transfer details
+  bankName      String?
+  accountName   String?
+  accountNumber String?
+  branchCode    String?
+  swiftCode     String?
+
+  isVerified Boolean   @default(false)
+  verifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([profileId, method])
+  @@map("settlement_accounts")
+}
+
+// ============================================================
+// NEW ADMIN REVIEW AUDIT TRAIL
+// ============================================================
+
+model MerchantReviewHistory {
+  id        String        @id @default(uuid()) @db.Uuid
+  profileId String        @db.Uuid
+  fromStatus AccountStatus
+  toStatus   AccountStatus
+  note       String?
+  performedBy String      // Admin ID; no admin model assumed yet
+
+  createdAt DateTime @default(now())
+
+  profile MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, createdAt])
+  @@map("merchant_review_history")
 }

@@ -1,7 +1,8 @@
 // Decorators and helpers imported from NestJS core.
 import {
   Body,        // Extracts and validates the request body (piped into a DTO).
-  Controller,  // Marks this class as a route controller.
+  Controller, // Marks this class as a route controller.
+  Delete,
   Get,         // HTTP GET method decorator.
   HttpCode,    // Overrides the default HTTP status code a route returns.
   HttpStatus,  // Enum of standard status codes (200, 201, 429...).
@@ -14,6 +15,8 @@ import type { Request, Response } from 'express'; // Express types for raw req/r
 
 // The service holding the actual authentication business logic.
 import { AuthService } from './auth.service.js';
+// Current user decorator for extracting the user from the request.
+import { CurrentUser } from './current-user.decorator.js';
 // DTOs (Data Transfer Objects): define the shape + validation rules for
 // each endpoint's request body. class-validator runs on these automatically.
 import { RegisterAuthDto } from './dto/register-auth.dto.js';
@@ -64,7 +67,7 @@ const cookieOptions = {
 export class AuthController {
   // NestJS sees the AuthService type here, finds it in AuthModule's
   // providers/exports, and injects the singleton instance.
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   // POST /auth/register — create a new merchant account.
   // @Body() pipes the JSON body through RegisterAuthDto's validation
@@ -153,6 +156,16 @@ export class AuthController {
 
     // Confirmation body — serialized to JSON because of passthrough: true.
     return { message: 'Logged out successfully' };
+  }
+
+  // DELETE /auth/account
+  // Soft-deletes the authenticated merchant's account.
+  // The JWT is still valid until it expires — the strategy's
+  // deletedAt check blocks any further use immediately.
+  @UseGuards(JwtAuthGuard)
+  @Delete('account')
+  deleteAccount(@CurrentUser() user: { userId: string }) {
+    return this.authService.deleteAccount(user.userId);
   }
 
 }

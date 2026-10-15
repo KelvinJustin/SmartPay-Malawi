@@ -1,12 +1,10 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
-import { AppModule, ObserveInstrument } from './app.module.js';
+import { AppModule } from './app.module.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    instrument: ObserveInstrument,
-  });
+  const app = await NestFactory.create(AppModule);
 
   // Parse incoming cookies so Passport can read the JWT cookie.
   app.use(cookieParser());
@@ -17,6 +15,13 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Apply /v1 prefix to ALL routes globally
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+    prefix: 'v',
+  });
 
   // Allow the React frontend to make requests with cookies.
   // FRONTEND_URL must be the EXACT origin of the frontend (no trailing slash).

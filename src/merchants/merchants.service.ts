@@ -6,8 +6,7 @@ import {
 
 import { DatabaseService } from '../database/database.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
-import { AddSettlementAccountDto } from './dto/add-settlement-account.dto.js';
-import { SettlementMethod, AccountStatus, DocumentType } from '../generated/prisma/enums.js';
+import { AccountStatus, DocumentType } from '../generated/prisma/enums.js';
 
 @Injectable()
 export class MerchantsService {
@@ -25,7 +24,6 @@ export class MerchantsService {
       where: { merchantId },
       include: {
         documents: true,
-        settlementAccounts: true,
       },
     });
 
@@ -79,7 +77,7 @@ export class MerchantsService {
   //   NGO             → BUSINESS_REGISTRATION, TAX_CERTIFICATE
   private readonly requiredDocuments: Record<string, string[]> = {
     INDIVIDUAL: ['NATIONAL_ID_FRONT', 'NATIONAL_ID_BACK'],
-    SOLE_TRADER: ['NATIONAL_ID_FRONT', 'NATIONAL_ID_BACK', 'PROOF_OF_ADDRESS'],
+    SOLE_TRADER: ['NATIONAL_ID_FRONT', 'NATIONAL_ID_BACK', 'PROOF_OF_ADDRESS',],
     PARTNERSHIP: ['BUSINESS_REGISTRATION', 'DIRECTOR_ID'],
     LIMITED_COMPANY: ['BUSINESS_REGISTRATION', 'TAX_CERTIFICATE', 'DIRECTOR_ID'],
     NGO: ['BUSINESS_REGISTRATION', 'TAX_CERTIFICATE'],
@@ -131,114 +129,5 @@ export class MerchantsService {
         rejectionReason: null,
       },
     });
-  }
-
-  // ============================================================
-  // SETTLEMENT ACCOUNTS
-  // ============================================================
-
-  // Returns all settlement accounts for the merchant, ordered by
-  // creation date so the primary account (set first) appears at the top.
-  async getSettlementAccounts(merchantId: string) {
-    const profile = await this.databaseService.merchantProfile.findUnique({
-      where: { merchantId },
-    });
-
-    if (!profile) {
-      throw new NotFoundException('Profile not found');
-    }
-
-    return this.databaseService.settlementAccount.findMany({
-      where: { profileId: profile.id },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  // Adds a new payout destination for the merchant.
-  // The method field drives which other fields are required:
-  //   AIRTEL_MONEY / TNM_MPAMBA → phoneNumber
-  //   BANK_TRANSFER             → bankName, accountName, accountNumber
-  //
-  // If isPrimary is true, all existing accounts are demoted first
-  // so there is always exactly one primary account.
-  async addSettlementAccount(
-    merchantId: string,
-    dto: AddSettlementAccountDto,
-  ) {
-    const profile = await this.databaseService.merchantProfile.findUnique({
-      where: { merchantId },
-    });
-
-    if (!profile) {
-      throw new NotFoundException('Profile not found');
-    }
-
-    if (
-      dto.method === SettlementMethod.BANK_TRANSFER &&
-      (!dto.bankName || !dto.accountName || !dto.accountNumber)
-    ) {
-      throw new BadRequestException(
-        'Bank transfers require bankName, accountName, and accountNumber.',
-      );
-    }
-
-    if (
-      (dto.method === SettlementMethod.AIRTEL_MONEY ||
-        dto.method === SettlementMethod.TNM_MPAMBA) &&
-      !dto.phoneNumber
-    ) {
-      throw new BadRequestException(
-        'Mobile money accounts require a phoneNumber.',
-      );
-    }
-
-    // Demote all existing accounts before setting this one as primary.
-    // This runs as a separate query before the insert — not in a
-    // transaction — because a partial failure here (demote succeeds,
-    // insert fails) still leaves a valid state (no primary), which is
-    // safer than leaving two primaries.
-    if (dto.isPrimary) {
-      await this.databaseService.settlementAccount.updateMany({
-        where: { profileId: profile.id },
-        data: { isPrimary: false },
-      });
-    }
-
-    return this.databaseService.settlementAccount.create({
-      data: {
-        profileId: profile.id,
-        ...dto,
-      },
-    });
-  }
-
-  // Removes a settlement account. The profileId check ensures a merchant
-  // can only delete their own accounts — they cannot delete another
-  // merchant's account even if they somehow know the accountId.
-  async removeSettlementAccount(merchantId: string, accountId: string) {
-    const profile = await this.databaseService.merchantProfile.findUnique({
-      where: { merchantId },
-    });
-
-    if (!profile) {
-      throw new NotFoundException('Profile not found');
-    }
-
-    const account = await this.databaseService.settlementAccount.findFirst({
-      where: {
-        id: accountId,
-        profileId: profile.id,
-      },
-    });
-
-    if (!account) {
-      throw new NotFoundException('Settlement account not found');
-    }
-
-    await this.databaseService.settlementAccount.delete({
-      where: { id: accountId },
-    });
-
-    return { message: 'Settlement account removed' };
   }
 }

@@ -1,12 +1,13 @@
-
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { type Transporter } from 'nodemailer';
 
 @Injectable()
-export class EmailService {
+export class EmailService implements OnModuleInit {
     // Reusable SMTP transporter responsible for sending outgoing emails.
     private readonly transporter: Transporter;
+    // Create a logger for database lifecycle events and errors.
+    private readonly logger = new Logger(EmailService.name);
 
     constructor(private readonly configService: ConfigService) {
         // Configure the SMTP connection using environment-based settings.
@@ -24,6 +25,27 @@ export class EmailService {
                 pass: this.configService.getOrThrow<string>('SMTP_API_KEY'),
             },
         });
+    }
+
+    // This lifecycle hook runs during startup and blocks the app from finishing 
+    // until the promise resolves (ensuring SMTP connects first).
+    async onModuleInit() {
+        try {
+            await new Promise((resolve, reject) => {
+                this.transporter.verify((error) => {
+                    if (error) {
+                        return reject(error);
+                    }
+                    resolve(true);
+                });
+            });
+            this.logger.log('SMTP connection established');
+        } catch (error) {
+            this.logger.error('SMTP connection failed:', error);
+            // Optional: Uncomment the line below if you want the app to crash/abort 
+            // startup completely when SMTP configuration is invalid.
+            // throw error;
+        }
     }
 
     // Generic email method shared by the verification and login email workflows.

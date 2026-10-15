@@ -82,43 +82,29 @@ export class AuthService {
         },
       });
 
-      const user = await this.databaseService.$transaction(async (tx) => {
-        const created = await tx.merchant.create({
-          data: { name, email, passwordHash: hashedPassword, phone },
-        });
-
-        await tx.otpChallenge.create({
-          data: {
-            merchantId: created.id,
-            purpose: 'EMAIL_VERIFICATION',
-            codeHash: this.hashOtp(created.id, code),
-            expiresAt,
-          },
-        });
-
-        // Auto-create a blank profile so it always exists after registration.
-        // The merchant fills in the details later — we just need the row to exist.
-        await tx.merchantProfile.create({
-          data: {
-            merchantId: created.id,
-            businessName: '',
-            businessType: 'INDIVIDUAL',
-            accountStatus: 'PENDING_SUBMISSION',
-          },
-        });
-
-        try {
-          await this.emailService.sendVerificationCode(email, code);
-        } catch {
-          throw new ServiceUnavailableException(
-            'Registration succeeded but we could not send your verification ' +
-            'email. Please try again.',
-          );
-        }
-
-        return created;
+      await tx.merchantProfile.create({
+        data: {
+          merchantId: created.id,
+          businessName: '',
+          businessType: 'INDIVIDUAL',
+          accountStatus: 'PENDING_SUBMISSION',
+        },
       });
+
+      return created;
     });
+
+    // Email is sent OUTSIDE the transaction so a failure doesn't roll back the account
+    try {
+      await this.emailService.sendVerificationCode(email, code);
+    } catch {
+      throw new ServiceUnavailableException(
+        'Registration succeeded but we could not send your verification ' +
+        'email. Please try again.',
+      );
+    }
+
+    return { message: 'Verification email sent', email: user.email };
   }
   // ============================================================
   // LOGIN — FIRST FACTOR
@@ -271,6 +257,7 @@ export class AuthService {
 
     return {
       accessToken: await this.jwtService.signAsync(payload),
+      
     };
   }
 

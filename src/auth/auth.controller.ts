@@ -58,10 +58,11 @@ const cookieOptions = {
 // @Controller('auth') → every route in this class is prefixed with /auth,
 // so @Post('login') becomes POST /auth/login.
 @Controller('auth')
+
 // ArcjetGuard runs FIRST for every route below: it checks the request
 // against Arcjet's rules (shield, bot detection, rate limit) and throws
 // 429/403 before the handler ever runs if anything looks malicious.
-// ⚠️ Note: a @UseGuards on an INDIVIDUAL route below REPLACES this
+// Note: a @UseGuards on an INDIVIDUAL route below REPLACES this
 // controller-level guard for that route (see getProfile).
 @UseGuards(ArcjetGuard)
 export class AuthController {
@@ -87,21 +88,31 @@ export class AuthController {
 
   // POST /auth/verify-login — step 2: check the emailed OTP. Only if the
   // code matches does AuthService set the access_token cookie.
-  // ⚠️ This is a brute-force target — that's why ArcjetGuard's rate limit
+  // This is a brute-force target — that's why ArcjetGuard's rate limit
   // (60/min/IP) protects it. Consider a stricter slidingWindow rule later.
   @Post('verify-login')
-  verifyLogin(@Body() dto: VerifyLoginDto) {
-    return this.authService.verifyLogin(dto);
+  async verifyLogin(
+    @Body() dto: VerifyLoginDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.authService.verifyLogin(dto);
+    response.cookie(COOKIE_NAME, result.accessToken, cookieOptions);
+    return { message: 'Login successful' };
   }
 
   // POST /auth/verify-email — verify ownership of the email address
   // (link/code from the registration confirmation email).
-  // ⚠️ Caveat: if this endpoint is reached via a GET link in an email,
+  // Caveat: if this endpoint is reached via a GET link in an email,
   // corporate mail scanners pre-fetch links and may trip detectBot.
   // That flow should use Arcjet's email-validation instead of bot rules.
   @Post('verify-email')
-  verifyEmail(@Body() dto: VerifyEmailDto) {
-    return this.authService.verifyEmail(dto);
+  async verifyEmail(
+    @Body() dto: VerifyEmailDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.authService.verifyEmail(dto);
+    response.cookie(COOKIE_NAME, result.accessToken, cookieOptions);
+    return { message: result.message }; // 'Email verified successfully' or 'Email already verified'
   }
 
   // GET /auth/me — return the currently logged-in user's identity.
@@ -128,7 +139,7 @@ export class AuthController {
       };
     },
   ) {
-    // Just hand back the identity the JWT strategy stamped on the request.
+    // Just hand back the identity the JWT strategy stamped on the request. 
     return request.user;
   }
 

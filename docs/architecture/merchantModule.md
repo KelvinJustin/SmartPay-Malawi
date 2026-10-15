@@ -1,6 +1,5 @@
 # SmartPay Malawi — Merchant API Reference
 
-> **Base URL:** `http://localhost:3000`
 > **Auth:** All endpoints require a valid JWT sent as an `httpOnly` cookie (`access_token`) or `Authorization: Bearer <token>` header.
 
 ---

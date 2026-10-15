@@ -86,6 +86,7 @@ model Merchant {
   emailVerifiedAt DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?      @db.Timestamp(3) // Soft delete timestamp
 
   // Existing authentication relations
   otpChallenges OtpChallenge[]

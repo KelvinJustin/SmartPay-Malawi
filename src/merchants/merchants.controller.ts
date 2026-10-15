@@ -10,7 +10,6 @@ import {
 } from '@nestjs/common';
 
 import { MerchantsService } from './merchants.service.js';
-import { CreateProfileDto } from './dto/create-profile.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { AddSettlementAccountDto } from './dto/add-settlement-account.dto.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -24,15 +23,6 @@ export class MerchantsController {
   // ============================================================
   // PROFILE
   // ============================================================
-
-  // POST /merchants/profile
-  @Post('profile')
-  createProfile(
-    @CurrentUser('userId') merchantId: string,
-    @Body() dto: CreateProfileDto,
-  ) {
-    return this.merchantsService.createProfile(merchantId, dto);
-  }
 
   // GET /merchants/profile
   @Get('profile')

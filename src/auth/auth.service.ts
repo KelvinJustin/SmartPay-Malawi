@@ -30,7 +30,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   // ============================================================
   // SHARED OTP UTILITIES
@@ -82,24 +82,44 @@ export class AuthService {
         },
       });
 
-      try {
-        await this.emailService.sendVerificationCode(email, code);
-      } catch {
-        throw new ServiceUnavailableException(
-          'Registration succeeded but we could not send your verification ' +
-          'email. Please try again.',
-        );
-      }
+      const user = await this.databaseService.$transaction(async (tx) => {
+        const created = await tx.merchant.create({
+          data: { name, email, passwordHash: hashedPassword, phone },
+        });
 
-      return created;
+        await tx.otpChallenge.create({
+          data: {
+            merchantId: created.id,
+            purpose: 'EMAIL_VERIFICATION',
+            codeHash: this.hashOtp(created.id, code),
+            expiresAt,
+          },
+        });
+
+        // Auto-create a blank profile so it always exists after registration.
+        // The merchant fills in the details later — we just need the row to exist.
+        await tx.merchantProfile.create({
+          data: {
+            merchantId: created.id,
+            businessName: '',
+            businessType: 'INDIVIDUAL',
+            accountStatus: 'PENDING_SUBMISSION',
+          },
+        });
+
+        try {
+          await this.emailService.sendVerificationCode(email, code);
+        } catch {
+          throw new ServiceUnavailableException(
+            'Registration succeeded but we could not send your verification ' +
+            'email. Please try again.',
+          );
+        }
+
+        return created;
+      });
     });
-
-    return {
-      message: 'Registration successful. Check your email for the verification code.',
-      email: user.email,
-    };
   }
-
   // ============================================================
   // LOGIN — FIRST FACTOR
   // ============================================================
@@ -380,7 +400,41 @@ export class AuthService {
     return `This action updates a #${id} auth`;
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+  // Soft-delete the merchant account. We never hard-delete because
+  // financial records, audit trails, and KYC documents must remain
+  // intact for reconciliation. Setting deletedAt makes the account
+  // unreachable without destroying any trace of it.
+  //
+  // We also suspend the profile so it cannot be approved or used
+  // for payments even if someone finds a way to reference it.
+  async deleteAccount(userId: string) {
+    const merchant = await this.databaseService.merchant.findUnique({
+      where: { id: userId },
+      include: { profile: true },
+    });
+
+    if (!merchant || merchant.deletedAt) {
+      throw new UnauthorizedException('Account not found');
+    }
+
+    await this.databaseService.$transaction(async (tx) => {
+      // Mark the merchant account as deleted.
+      await tx.merchant.update({
+        where: { id: userId },
+        data: { deletedAt: new Date() },
+      });
+
+      // If a profile exists, suspend it so it can't be approved
+      // or used for payouts. We don't delete it — it stays for
+      // audit and financial reconciliation purposes.
+      if (merchant.profile) {
+        await tx.merchantProfile.update({
+          where: { merchantId: userId },
+          data: { accountStatus: 'SUSPENDED' },
+        });
+      }
+    });
+
+    return { message: 'Account deleted successfully' };
   }
 }

@@ -13,7 +13,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     configService: ConfigService,
     private readonly databaseService: DatabaseService,
-  ) {
+      ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         (request) => request?.cookies?.access_token ?? null,

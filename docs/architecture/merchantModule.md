@@ -10,6 +10,34 @@ After login or email verification, the server sets an `httpOnly` cookie called `
 
 ---
 
+---
+
+## Account Endpoints
+
+### DELETE /auth/account
+
+Soft-deletes the authenticated merchant's account. The account is marked as deleted but no data is removed — financial records, audit trails, and KYC documents are preserved for reconciliation.
+
+After deletion:
+- All future requests with the existing JWT are immediately rejected
+- The merchant profile is suspended so it cannot be approved or used for payouts
+- The account cannot be recovered through the API
+
+**Request:** No body needed.
+
+**Response 200:**
+```json
+{
+  "message": "Account deleted successfully"
+}
+```
+
+**Errors:**
+| Status | Message | Reason |
+|--------|---------|--------|
+| 401 | Unauthorized | JWT missing or expired |
+| 401 | Account not found | Account already deleted |
+
 ## Profile Endpoints
 
 ### GET /merchants/profile
@@ -107,28 +135,6 @@ Update any business details on the profile. All fields are optional — only sen
 | Status | Message | Reason |
 |--------|---------|--------|
 | 400 | Validation failed | Invalid field format e.g. bad email |
-| 401 | Unauthorized | JWT missing or expired |
-| 404 | Profile not found | Profile row missing |
-
----
-
-### DELETE /merchants/profile
-
-Delete the merchant's profile. Only allowed when `accountStatus` is `PENDING_SUBMISSION` or `REJECTED`. Once submitted or under review, deletion is blocked to protect the audit trail.
-
-**Request:** No body needed.
-
-**Response 200:**
-```json
-{
-  "message": "Profile deleted successfully"
-}
-```
-
-**Errors:**
-| Status | Message | Reason |
-|--------|---------|--------|
-| 400 | Profile cannot be deleted while in status: SUBMITTED | Cannot delete once submitted or approved |
 | 401 | Unauthorized | JWT missing or expired |
 | 404 | Profile not found | Profile row missing |
 

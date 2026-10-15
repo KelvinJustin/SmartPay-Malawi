@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -14,24 +8,17 @@ datasource db {
 }
 
 // ============================================================
-// EXISTING AUTHENTICATION ENUMS — PRESERVED
+// ENUMS
 // ============================================================
-
-enum MerchantStatus {
-  PENDING
-  ACTIVE
-  SUSPENDED
-}
 
 enum OtpPurpose {
   EMAIL_VERIFICATION
   LOGIN
 }
 
-// ============================================================
-// NEW MERCHANT ONBOARDING ENUMS
-// ============================================================
-
+// AccountStatus drives the entire KYC/onboarding lifecycle.
+// It lives on MerchantProfile, not Merchant — the auth account
+// has no concept of approval status, only the business profile does.
 enum AccountStatus {
   PENDING_SUBMISSION
   SUBMITTED
@@ -65,42 +52,35 @@ enum DocumentStatus {
   EXPIRED
 }
 
-enum SettlementMethod {
-  AIRTEL_MONEY
-  TNM_MPAMBA
-  BANK_TRANSFER
-}
-
 // ============================================================
-// EXISTING MERCHANT MODEL — AUTH FIELDS PRESERVED
+// MERCHANT — AUTH IDENTITY ONLY
 // ============================================================
 
+// This model is purely the login identity.
+// It knows nothing about business details, KYC, or balances.
+// Those live on MerchantProfile and MerchantLedger respectively.
 model Merchant {
-  id              String         @id @default(uuid()) @db.Uuid
+  id              String    @id @default(uuid()) @db.Uuid
   name            String
-  email           String         @unique
+  email           String    @unique
   passwordHash    String
-  phone           String         @unique
+  phone           String    @unique
   pinHash         String?
-  status          MerchantStatus @default(PENDING)
   emailVerifiedAt DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  deletedAt       DateTime?      @db.Timestamp(3) // Soft delete timestamp
+  deletedAt       DateTime? // Soft delete — never hard delete
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  // Existing authentication relations
   otpChallenges OtpChallenge[]
   revokedTokens RevokedToken[]
-
-  // New optional onboarding relation.
-  // Registration does not require a profile.
-  profile MerchantProfile?
+  profile       MerchantProfile?
+  ledger        MerchantLedger?
 
   @@map("merchants")
 }
 
 // ============================================================
-// EXISTING OTP MODEL — PRESERVED
+// OTP
 // ============================================================
 
 model OtpChallenge {
@@ -122,7 +102,7 @@ model OtpChallenge {
 }
 
 // ============================================================
-// EXISTING TOKEN REVOCATION MODEL — PRESERVED
+// TOKEN REVOCATION
 // ============================================================
 
 model RevokedToken {
@@ -139,9 +119,12 @@ model RevokedToken {
 }
 
 // ============================================================
-// NEW MERCHANT PROFILE / BUSINESS ONBOARDING
+// MERCHANT PROFILE — BUSINESS IDENTITY & KYC
 // ============================================================
 
+// Separate from Merchant intentionally — a merchant can have a
+// login account without a business profile. The profile is created
+// automatically at registration but starts empty.
 model MerchantProfile {
   id         String @id @default(uuid()) @db.Uuid
   merchantId String @unique @db.Uuid
@@ -151,55 +134,57 @@ model MerchantProfile {
   tradingName            String?
   businessType           BusinessType
   businessRegistrationNo String?
-  taxIdentificationNo    String?
-  merchantCategoryCode   String?
+  taxIdentificationNo    String?       // MRA TPIN
+  merchantCategoryCode   String?       // ISO 18245 MCC e.g. "5411" for grocery
   industryDescription    String?
 
   // Contact and location
-  supportEmail  String?
-  supportPhone  String?
-  websiteUrl    String?
-  addressLine1  String?
-  addressLine2  String?
-  city          String?
-  district      String?
-  country       String   @default("MW")
+  supportEmail String?
+  supportPhone String?
+  websiteUrl   String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  district     String?
+  country      String  @default("MW")
 
   // Branding
   logoUrl String?
 
-  // Onboarding and approval
+  // KYC/onboarding lifecycle — managed exclusively by admins
+  // except for the initial submission trigger by the merchant.
   accountStatus   AccountStatus @default(PENDING_SUBMISSION)
   rejectionReason String?
-  approvedAt      DateTime?
-  approvedById    String?
   submittedAt     DateTime?
+  approvedAt      DateTime?
+  approvedById    String?       // Admin user id
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // One profile belongs to one merchant.
-  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-
-  documents         MerchantDocument[]
-  settlementAccounts SettlementAccount[]
-  reviewHistory     MerchantReviewHistory[]
+  merchant      Merchant                @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  documents     MerchantDocument[]
+  reviewHistory MerchantReviewHistory[]
 
   @@map("merchant_profiles")
 }
 
 // ============================================================
-// NEW KYC DOCUMENTS
+// KYC DOCUMENTS
 // ============================================================
 
+// Documents belong to the profile, not the merchant directly,
+// because they are part of the KYC/compliance record.
+// One row per document type per profile — enforced by @@unique.
+// Re-uploading a rejected document upserts the existing row.
 model MerchantDocument {
   id        String         @id @default(uuid()) @db.Uuid
   profileId String         @db.Uuid
   type      DocumentType
   status    DocumentStatus @default(PENDING)
 
-  // Store files in private object storage.
-  // fileKey identifies the stored object.
+  // Files stored in private object storage (e.g. Cloudflare R2).
+  // fileKey is the storage object key used for deletion.
   fileUrl       String
   fileKey       String
   mimeType      String
@@ -207,65 +192,33 @@ model MerchantDocument {
 
   rejectionNote String?
   reviewedAt    DateTime?
-  reviewedById  String?
-  expiresAt     DateTime?
+  reviewedById  String?   // Admin user id
+  expiresAt     DateTime? // For ID documents that expire
 
   uploadedAt DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   profile MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
-  @@unique([profileId, type]) 
+  @@unique([profileId, type])
   @@index([profileId, type])
   @@index([status])
   @@map("merchant_documents")
 }
 
 // ============================================================
-// NEW SETTLEMENT / PAYOUT ACCOUNTS
+// ADMIN REVIEW AUDIT TRAIL
 // ============================================================
 
-model SettlementAccount {
-  id        String           @id @default(uuid()) @db.Uuid
-  profileId String           @db.Uuid
-  method    SettlementMethod
-  isPrimary Boolean          @default(false)
-  label     String?
-
-  // Mobile money details
-  phoneNumber String?
-
-  // Bank transfer details
-  bankName      String?
-  accountName   String?
-  accountNumber String?
-  branchCode    String?
-  swiftCode     String?
-
-  isVerified Boolean   @default(false)
-  verifiedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  profile MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-
-  @@index([profileId])
-  @@index([profileId, method])
-  @@map("settlement_accounts")
-}
-
-// ============================================================
-// NEW ADMIN REVIEW AUDIT TRAIL
-// ============================================================
-
+// Every status change on a profile is recorded here.
+// This is append-only — rows are never updated or deleted.
 model MerchantReviewHistory {
-  id        String        @id @default(uuid()) @db.Uuid
-  profileId String        @db.Uuid
-  fromStatus AccountStatus
-  toStatus   AccountStatus
-  note       String?
-  performedBy String      // Admin ID; no admin model assumed yet
+  id          String        @id @default(uuid()) @db.Uuid
+  profileId   String        @db.Uuid
+  fromStatus  AccountStatus
+  toStatus    AccountStatus
+  note        String?
+  performedBy String        // Admin user id — no Admin model yet
 
   createdAt DateTime @default(now())
 
@@ -273,4 +226,36 @@ model MerchantReviewHistory {
 
   @@index([profileId, createdAt])
   @@map("merchant_review_history")
+}
+
+// ============================================================
+// MERCHANT LEDGER — BALANCE TRACKING
+// ============================================================
+
+// This is a placeholder for the balance/settlement layer.
+// Settlement in SmartPay means: a transaction has been confirmed
+// and the merchant is owed the money. It is a ledger concept,
+// not a payout concept. Withdrawals (how the merchant gets their
+// money out) are a separate module built later.
+//
+// One ledger per merchant. Balance is in Malawian Kwacha (MWK),
+// stored as integer tambala (1 MWK = 100 tambala) to avoid
+// floating point precision issues entirely.
+model MerchantLedger {
+  id               String   @id @default(uuid()) @db.Uuid
+  merchantId       String   @unique @db.Uuid
+
+  // availableBalance: settled funds the merchant can withdraw
+  // pendingBalance:   funds from transactions not yet settled
+  // Both stored as integer tambala to avoid float precision issues.
+  availableBalance Int      @default(0)
+  pendingBalance   Int      @default(0)
+  currency         String   @default("MWK")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("merchant_ledgers")
 }

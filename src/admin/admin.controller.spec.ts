@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminController } from './admin.controller.js';
 import { AdminService } from './admin.service.js';
+import { describe, expect, it, beforeEach } from 'vitest';
 
 describe('AdminController', () => {
   let controller: AdminController;

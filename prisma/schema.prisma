@@ -16,9 +16,7 @@ enum OtpPurpose {
   LOGIN
 }
 
-// AccountStatus drives the entire KYC/onboarding lifecycle.
-// It lives on MerchantProfile, not Merchant — the auth account
-// has no concept of approval status, only the business profile does.
+// KYC/onboarding lifecycle — lives on MerchantProfile, not Merchant.
 enum AccountStatus {
   PENDING_SUBMISSION
   SUBMITTED
@@ -52,12 +50,23 @@ enum DocumentStatus {
   EXPIRED
 }
 
+enum AdminRole {
+  SUPER_ADMIN
+  COMPLIANCE
+  OPERATIONS
+  SUPPORT
+}
+
+enum AdminStatus {
+  ACTIVE
+  SUSPENDED
+}
+
 // ============================================================
-// MERCHANT — AUTH IDENTITY ONLY
+// MERCHANT
 // ============================================================
 
-// This model is purely the login identity.
-// It knows nothing about business details, KYC, or balances.
+// Auth identity only — no business details, KYC, or balances.
 // Those live on MerchantProfile and MerchantLedger respectively.
 model Merchant {
   id              String    @id @default(uuid()) @db.Uuid
@@ -67,7 +76,7 @@ model Merchant {
   phone           String    @unique
   pinHash         String?
   emailVerifiedAt DateTime?
-  deletedAt       DateTime? // Soft delete — never hard delete
+  deletedAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -77,6 +86,33 @@ model Merchant {
   ledger        MerchantLedger?
 
   @@map("merchants")
+}
+
+// ============================================================
+// ADMIN
+// ============================================================
+
+// Privileged platform identity — separate from merchants.
+// Admin accounts must be provisioned internally; no public registration.
+model Admin {
+  id           String      @id @default(uuid()) @db.Uuid
+  name         String
+  email        String      @unique
+  passwordHash String
+  role         AdminRole   @default(SUPPORT)
+  status       AdminStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  deletedAt    DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  approvedProfiles   MerchantProfile[]       @relation("ProfileApprovedBy")
+  reviewedDocuments  MerchantDocument[]      @relation("DocumentReviewedBy")
+  reviewHistory      MerchantReviewHistory[] @relation("ReviewPerformedBy")
+  adminRevokedTokens AdminRevokedToken[]
+
+  @@index([role, status])
+  @@map("admins")
 }
 
 // ============================================================
@@ -118,13 +154,27 @@ model RevokedToken {
   @@map("revoked_tokens")
 }
 
+// Admin sessions are revoked independently of merchant sessions.
+model AdminRevokedToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  jti       String   @unique @db.Uuid
+  adminId   String   @db.Uuid
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([adminId])
+  @@index([expiresAt])
+  @@map("admin_revoked_tokens")
+}
+
 // ============================================================
-// MERCHANT PROFILE — BUSINESS IDENTITY & KYC
+// MERCHANT PROFILE
 // ============================================================
 
-// Separate from Merchant intentionally — a merchant can have a
-// login account without a business profile. The profile is created
-// automatically at registration but starts empty.
+// Business identity and KYC. Created automatically at registration
+// but starts empty — the merchant fills it in before submitting for approval.
 model MerchantProfile {
   id         String @id @default(uuid()) @db.Uuid
   merchantId String @unique @db.Uuid
@@ -134,8 +184,8 @@ model MerchantProfile {
   tradingName            String?
   businessType           BusinessType
   businessRegistrationNo String?
-  taxIdentificationNo    String?       // MRA TPIN
-  merchantCategoryCode   String?       // ISO 18245 MCC e.g. "5411" for grocery
+  taxIdentificationNo    String? // MRA TPIN
+  merchantCategoryCode   String? // ISO 18245 MCC e.g. "5411"
   industryDescription    String?
 
   // Contact and location
@@ -151,18 +201,18 @@ model MerchantProfile {
   // Branding
   logoUrl String?
 
-  // KYC/onboarding lifecycle — managed exclusively by admins
-  // except for the initial submission trigger by the merchant.
+  // KYC lifecycle — only admins may transition status past SUBMITTED.
   accountStatus   AccountStatus @default(PENDING_SUBMISSION)
   rejectionReason String?
   submittedAt     DateTime?
   approvedAt      DateTime?
-  approvedById    String?       // Admin user id
+  approvedById    String?       @db.Uuid
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   merchant      Merchant                @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  approvedBy    Admin?                  @relation("ProfileApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   documents     MerchantDocument[]
   reviewHistory MerchantReviewHistory[]
 
@@ -173,32 +223,26 @@ model MerchantProfile {
 // KYC DOCUMENTS
 // ============================================================
 
-// Documents belong to the profile, not the merchant directly,
-// because they are part of the KYC/compliance record.
 // One row per document type per profile — enforced by @@unique.
 // Re-uploading a rejected document upserts the existing row.
 model MerchantDocument {
-  id        String         @id @default(uuid()) @db.Uuid
-  profileId String         @db.Uuid
-  type      DocumentType
-  status    DocumentStatus @default(PENDING)
-
-  // Files stored in private object storage (e.g. Cloudflare R2).
-  // fileKey is the storage object key used for deletion.
+  id            String         @id @default(uuid()) @db.Uuid
+  profileId     String         @db.Uuid
+  type          DocumentType
+  status        DocumentStatus @default(PENDING)
   fileUrl       String
-  fileKey       String
+  fileKey       String // Storage object key used for deletion
   mimeType      String
   fileSizeBytes Int
-
   rejectionNote String?
   reviewedAt    DateTime?
-  reviewedById  String?   // Admin user id
-  expiresAt     DateTime? // For ID documents that expire
+  reviewedById  String?        @db.Uuid
+  expiresAt     DateTime? // For documents with an expiry (e.g. national ID)
+  uploadedAt    DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
-  uploadedAt DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  profile MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile    MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  reviewedBy Admin?          @relation("DocumentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@unique([profileId, type])
   @@index([profileId, type])
@@ -207,53 +251,41 @@ model MerchantDocument {
 }
 
 // ============================================================
-// ADMIN REVIEW AUDIT TRAIL
+// REVIEW HISTORY
 // ============================================================
 
-// Every status change on a profile is recorded here.
-// This is append-only — rows are never updated or deleted.
+// Append-only audit trail of every profile status change.
+// Rows are never updated or deleted.
 model MerchantReviewHistory {
-  id          String        @id @default(uuid()) @db.Uuid
-  profileId   String        @db.Uuid
-  fromStatus  AccountStatus
-  toStatus    AccountStatus
-  note        String?
-  performedBy String        // Admin user id — no Admin model yet
+  id            String        @id @default(uuid()) @db.Uuid
+  profileId     String        @db.Uuid
+  fromStatus    AccountStatus
+  toStatus      AccountStatus
+  note          String?
+  performedById String        @db.Uuid
+  createdAt     DateTime      @default(now())
 
-  createdAt DateTime @default(now())
-
-  profile MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile     MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  performedBy Admin           @relation("ReviewPerformedBy", fields: [performedById], references: [id], onDelete: Restrict)
 
   @@index([profileId, createdAt])
   @@map("merchant_review_history")
 }
 
 // ============================================================
-// MERCHANT LEDGER — BALANCE TRACKING
+// MERCHANT LEDGER
 // ============================================================
 
-// This is a placeholder for the balance/settlement layer.
-// Settlement in SmartPay means: a transaction has been confirmed
-// and the merchant is owed the money. It is a ledger concept,
-// not a payout concept. Withdrawals (how the merchant gets their
-// money out) are a separate module built later.
-//
-// One ledger per merchant. Balance is in Malawian Kwacha (MWK),
-// stored as integer tambala (1 MWK = 100 tambala) to avoid
-// floating point precision issues entirely.
+// One ledger per merchant. Balances are stored as integer tambala
+// (1 MWK = 100 tambala) to avoid floating-point precision issues.
 model MerchantLedger {
   id               String   @id @default(uuid()) @db.Uuid
   merchantId       String   @unique @db.Uuid
-
-  // availableBalance: settled funds the merchant can withdraw
-  // pendingBalance:   funds from transactions not yet settled
-  // Both stored as integer tambala to avoid float precision issues.
-  availableBalance Int      @default(0)
-  pendingBalance   Int      @default(0)
+  availableBalance Int      @default(0) // Settled funds available to withdraw
+  pendingBalance   Int      @default(0) // Funds not yet settled
   currency         String   @default("MWK")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 

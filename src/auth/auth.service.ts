@@ -113,9 +113,18 @@ export class AuthService {
   async login(loginAuthDto: LoginAuthDto) {
     const { email, password } = loginAuthDto;
 
+
     const user = await this.databaseService.merchant.findUnique({
       where: { email },
+      include: {
+        profile: {
+          select: {
+            accountStatus: true,
+          },
+        },
+      },
     });
+
 
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
@@ -126,6 +135,15 @@ export class AuthService {
     if (!passwordMatch) {
       throw new UnauthorizedException('Invalid email or password');
     }
+
+
+    if (
+      user.deletedAt ||
+      user.profile?.accountStatus === 'SUSPENDED'
+    ) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
 
     if (!user.emailVerifiedAt) {
       throw new UnauthorizedException(
@@ -257,7 +275,7 @@ export class AuthService {
 
     return {
       accessToken: await this.jwtService.signAsync(payload),
-      
+
     };
   }
 
@@ -265,99 +283,100 @@ export class AuthService {
   // EMAIL VERIFICATION (auto-login on success)
   // ============================================================
 
-  async verifyEmail(dto: VerifyEmailDto) {
-    const { email, code } = dto;
+  
+async verifyEmail(dto: VerifyEmailDto) {
+  const { email, code } = dto;
 
-    const merchant = await this.databaseService.merchant.findUnique({
-      where: { email },
-    });
+  const merchant = await this.databaseService.merchant.findUnique({
+    where: { email },
+  });
 
-    if (!merchant) {
-      throw new UnauthorizedException('Invalid or expired verification code');
-    }
-
-    // Already verified — issue a token so they aren't left stranded.
-    if (merchant.emailVerifiedAt) {
-      const payload = {
-        sub: merchant.id,
-        email: merchant.email,
-        jti: randomUUID(),
-      };
-      return {
-        message: 'Email already verified',
-        accessToken: await this.jwtService.signAsync(payload),
-      };
-    }
-
-    const challenge = await this.databaseService.otpChallenge.findFirst({
-      where: {
-        merchantId: merchant.id,
-        purpose: 'EMAIL_VERIFICATION',
-        consumedAt: null,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (
-      !challenge ||
-      challenge.expiresAt.getTime() <= Date.now() ||
-      challenge.attempts >= 5
-    ) {
-      throw new UnauthorizedException('Invalid or expired verification code');
-    }
-
-    const submittedHash = this.hashOtp(merchant.id, code);
-
-    const matches = timingSafeEqual(
-      Buffer.from(submittedHash, 'hex'),
-      Buffer.from(challenge.codeHash, 'hex'),
+  if (!merchant) {
+    throw new UnauthorizedException(
+      'Invalid or expired verification code',
     );
+  }
 
-    if (!matches) {
-      await this.databaseService.otpChallenge.updateMany({
-        where: {
-          id: challenge.id,
-          consumedAt: null,
-          attempts: { lt: 5 },
-          expiresAt: { gt: new Date() },
-        },
-        data: { attempts: { increment: 1 } },
-      });
+  // Never issue an authentication token from email verification
+  // when the account is already verified.
+  if (merchant.emailVerifiedAt) {
+    throw new UnauthorizedException(
+      'Invalid or expired verification code',
+    );
+  }
 
-      throw new UnauthorizedException('Invalid or expired verification code');
-    }
+  const challenge = await this.databaseService.otpChallenge.findFirst({
+    where: {
+      merchantId: merchant.id,
+      purpose: 'EMAIL_VERIFICATION',
+      consumedAt: null,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
-    const consumed = await this.databaseService.otpChallenge.updateMany({
+  if (
+    !challenge ||
+    challenge.expiresAt.getTime() <= Date.now() ||
+    challenge.attempts >= 5
+  ) {
+    throw new UnauthorizedException(
+      'Invalid or expired verification code',
+    );
+  }
+
+  const submittedHash = this.hashOtp(merchant.id, code);
+
+  const storedHash = Buffer.from(challenge.codeHash, 'hex');
+  const candidateHash = Buffer.from(submittedHash, 'hex');
+
+  // timingSafeEqual throws if buffer lengths differ.
+  // A valid HMAC-SHA256 hash should always be 32 bytes.
+  if (
+    storedHash.length !== candidateHash.length ||
+    !timingSafeEqual(candidateHash, storedHash)
+  ) {
+    await this.databaseService.otpChallenge.updateMany({
       where: {
         id: challenge.id,
-        codeHash: submittedHash,
         consumedAt: null,
         attempts: { lt: 5 },
         expiresAt: { gt: new Date() },
       },
-      data: { consumedAt: new Date() },
+      data: { attempts: { increment: 1 } },
     });
 
-    if (consumed.count !== 1) {
-      throw new UnauthorizedException('Invalid or expired verification code');
-    }
-
-    await this.databaseService.merchant.update({
-      where: { id: merchant.id },
-      data: { emailVerifiedAt: new Date() },
-    });
-
-    const payload = {
-      sub: merchant.id,
-      email: merchant.email,
-      jti: randomUUID(),
-    };
-
-    return {
-      message: 'Email verified successfully',
-      accessToken: await this.jwtService.signAsync(payload),
-    };
+    throw new UnauthorizedException(
+      'Invalid or expired verification code',
+    );
   }
+
+  // Consume the challenge atomically so it cannot be reused.
+  const consumed = await this.databaseService.otpChallenge.updateMany({
+    where: {
+      id: challenge.id,
+      codeHash: submittedHash,
+      consumedAt: null,
+      attempts: { lt: 5 },
+      expiresAt: { gt: new Date() },
+    },
+    data: { consumedAt: new Date() },
+  });
+
+  if (consumed.count !== 1) {
+    throw new UnauthorizedException(
+      'Invalid or expired verification code',
+    );
+  }
+
+  await this.databaseService.merchant.update({
+    where: { id: merchant.id },
+    data: { emailVerifiedAt: new Date() },
+  });
+
+  return {
+    message: 'Email verified successfully',
+  };
+}
 
   // ============================================================
   // LOGOUT

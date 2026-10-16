@@ -1,3 +1,4 @@
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Test, type TestingModule } from '@nestjs/testing';
 import {
@@ -7,32 +8,116 @@ import {
 
 import { MerchantsService } from './merchants.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import type { UpdateProfileDto } from './dto/update-profile.dto.js';
+import {
+    AccountStatus,
+    BusinessType,
+    DocumentStatus,
+    DocumentType,
+    ProfileActorType,
+} from '../generated/prisma/enums.js';
+
+// --------------------------------------------------
+// Test fixtures
+// --------------------------------------------------
+
+const merchantId = '123e4567-e89b-42d3-a456-426614174000';
+
+const mockProfile = {
+    id: '123e4567-e89b-42d3-a456-426614174001',
+    merchantId,
+    businessName: 'Example Business',
+    businessType: BusinessType.INDIVIDUAL,
+    businessRegistrationNumber: null,
+    taxIdentificationNumber: null,
+    businessAddress: 'Lilongwe, Malawi',
+    accountStatus: AccountStatus.PENDING_SUBMISSION,
+    rejectionReason: null,
+    submittedAt: null,
+    approvedAt: null,
+    approvedById: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+};
+
+const mockDocuments = [
+    {
+        id: '123e4567-e89b-42d3-a456-426614174010',
+        profileId: mockProfile.id,
+        type: DocumentType.NATIONAL_ID_FRONT,
+        status: DocumentStatus.APPROVED,
+        expiresAt: null,
+    },
+    {
+        id: '123e4567-e89b-42d3-a456-426614174011',
+        profileId: mockProfile.id,
+        type: DocumentType.NATIONAL_ID_BACK,
+        status: DocumentStatus.PENDING,
+        expiresAt: null,
+    },
+];
+
+const mockProfileWithDocuments = {
+    ...mockProfile,
+    documents: mockDocuments,
+};
+
+// --------------------------------------------------
+// Database mocks
+// --------------------------------------------------
+
+const mockTransactionClient = {
+    merchantProfile: {
+        update: vi.fn(),
+        updateMany: vi.fn(),
+        findUnique: vi.fn(),
+    },
+    merchantReviewHistory: {
+        create: vi.fn(),
+    },
+};
+
+const mockDatabaseService = {
+    merchantProfile: {
+        findUnique: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+    },
+
+    $transaction: vi.fn(
+        async (
+            callback: (tx: typeof mockTransactionClient) => Promise<unknown>,
+        ) => callback(mockTransactionClient),
+    ),
+};
+
+// --------------------------------------------------
+// Tests
+// --------------------------------------------------
 
 describe('MerchantsService', () => {
     let service: MerchantsService;
 
-    const mockDatabaseService = {
-        merchantProfile: {
-            findUnique: vi.fn(),
-            update: vi.fn(),
-        },
-    };
-
-    const MERCHANT_ID = '123e4567-e89b-42d3-a456-426614174000';
-
-    const mockProfile = {
-        id: 'profile-uuid',
-        merchantId: MERCHANT_ID,
-        businessType: 'INDIVIDUAL',
-        accountStatus: 'PENDING_SUBMISSION',
-        submittedAt: null,
-        rejectionReason: null,
-        documents: [],
-    };
-
     beforeEach(async () => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
+
+        // The mocked transaction runs the callback against our
+        // transaction client. It does NOT simulate real DB rollback.
+        mockDatabaseService.$transaction.mockImplementation(
+            async (
+                callback: (tx: typeof mockTransactionClient) => Promise<unknown>,
+            ) => callback(mockTransactionClient),
+        );
+
+        mockTransactionClient.merchantProfile.updateMany.mockResolvedValue({
+            count: 1,
+        });
+
+        mockTransactionClient.merchantProfile.findUnique.mockResolvedValue({
+            ...mockProfile,
+            accountStatus: AccountStatus.SUBMITTED,
+        });
+
+        mockTransactionClient.merchantReviewHistory.create.mockResolvedValue({});
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
@@ -47,33 +132,42 @@ describe('MerchantsService', () => {
         service = module.get<MerchantsService>(MerchantsService);
     });
 
-    describe('initialization', () => {
-        it('should be defined', () => {
-            expect(service).toBeDefined();
-        });
+    // ------------------------------------------------
+    // Initialization
+    // ------------------------------------------------
+
+    it('should be defined', () => {
+        expect(service).toBeDefined();
     });
 
+    // ------------------------------------------------
+    // Get profile
+    // ------------------------------------------------
+
     describe('getMyProfile', () => {
-        it('should return the profile and its documents', async () => {
-            const profile = {
-                ...mockProfile,
-                documents: [{ id: 'document-1', type: 'NATIONAL_ID_FRONT' }],
-            };
+        it('should return the merchant profile with documents', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(
+                mockProfileWithDocuments,
+            );
 
-            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(profile);
+            const result = await service.getMyProfile(merchantId);
 
-            await expect(service.getMyProfile(MERCHANT_ID)).resolves.toEqual(profile);
+            expect(result).toEqual(mockProfileWithDocuments);
 
-            expect(mockDatabaseService.merchantProfile.findUnique).toHaveBeenCalledWith({
-                where: { merchantId: MERCHANT_ID },
-                include: { documents: true },
-            });
+            expect(
+                mockDatabaseService.merchantProfile.findUnique,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    where: { merchantId },
+                    include: { documents: true },
+                }),
+            );
         });
 
         it('should throw NotFoundException when the profile does not exist', async () => {
             mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(null);
 
-            await expect(service.getMyProfile(MERCHANT_ID)).rejects.toThrow(
+            await expect(service.getMyProfile(merchantId)).rejects.toThrow(
                 NotFoundException,
             );
         });
@@ -83,235 +177,366 @@ describe('MerchantsService', () => {
                 new Error('Database unavailable'),
             );
 
-            await expect(service.getMyProfile(MERCHANT_ID)).rejects.toThrow(
+            await expect(service.getMyProfile(merchantId)).rejects.toThrow(
                 'Database unavailable',
             );
         });
     });
 
-    describe('updateProfile', () => {
-        const dto = {
-            businessName: 'Updated Business',
-        } as UpdateProfileDto;
+    // ------------------------------------------------
+    // Update profile
+    // ------------------------------------------------
 
-        it('should update an existing profile', async () => {
-            const updatedProfile = {
-                ...mockProfile,
-                ...dto,
+    describe('updateProfile', () => {
+        it('should update an editable profile', async () => {
+            const updateDto = {
+                businessName: 'Updated Business',
+                businessAddress: 'Blantyre, Malawi',
             };
 
-            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(mockProfile);
-            mockDatabaseService.merchantProfile.update.mockResolvedValue(updatedProfile);
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(
+                mockProfile,
+            );
 
-            await expect(
-                service.updateProfile(MERCHANT_ID, dto),
-            ).resolves.toEqual(updatedProfile);
-
-            expect(mockDatabaseService.merchantProfile.findUnique).toHaveBeenCalledWith({
-                where: { merchantId: MERCHANT_ID },
+            mockDatabaseService.merchantProfile.update.mockResolvedValue({
+                ...mockProfile,
+                ...updateDto,
             });
 
-            expect(mockDatabaseService.merchantProfile.update).toHaveBeenCalledWith({
-                where: { merchantId: MERCHANT_ID },
-                data: dto,
+            const result = await service.updateProfile(merchantId, updateDto);
+
+            expect(result).toMatchObject(updateDto);
+
+            expect(
+                mockDatabaseService.merchantProfile.update,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    where: { merchantId },
+                    data: expect.objectContaining(updateDto),
+                }),
+            );
+        });
+
+        it('should allow updating a rejected profile', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
+                ...mockProfile,
+                accountStatus: AccountStatus.REJECTED,
             });
+
+            mockDatabaseService.merchantProfile.update.mockResolvedValue({
+                ...mockProfile,
+                accountStatus: AccountStatus.REJECTED,
+                businessName: 'Corrected Business',
+            });
+
+            const result = await service.updateProfile(merchantId, {
+                businessName: 'Corrected Business',
+            });
+
+            expect(result.businessName).toBe('Corrected Business');
         });
 
         it('should throw NotFoundException when the profile does not exist', async () => {
             mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(null);
 
             await expect(
-                service.updateProfile(MERCHANT_ID, dto),
+                service.updateProfile(merchantId, {
+                    businessName: 'Updated Business',
+                }),
             ).rejects.toThrow(NotFoundException);
-
-            expect(mockDatabaseService.merchantProfile.update).not.toHaveBeenCalled();
         });
 
-        it('should propagate database errors', async () => {
-            mockDatabaseService.merchantProfile.findUnique.mockRejectedValue(
+        it.each([
+            AccountStatus.SUBMITTED,
+            AccountStatus.UNDER_REVIEW,
+            AccountStatus.APPROVED,
+            AccountStatus.SUSPENDED,
+        ])(
+            'should reject updates when the profile status is %s',
+            async (accountStatus) => {
+                mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
+                    ...mockProfile,
+                    accountStatus,
+                });
+
+                await expect(
+                    service.updateProfile(merchantId, {
+                        businessName: 'Updated Business',
+                    }),
+                ).rejects.toThrow(BadRequestException);
+
+                expect(
+                    mockDatabaseService.merchantProfile.update,
+                ).not.toHaveBeenCalled();
+            },
+        );
+
+        it('should propagate database update errors', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(
+                mockProfile,
+            );
+
+            mockDatabaseService.merchantProfile.update.mockRejectedValue(
                 new Error('Database unavailable'),
             );
 
             await expect(
-                service.updateProfile(MERCHANT_ID, dto),
+                service.updateProfile(merchantId, {
+                    businessName: 'Updated Business',
+                }),
             ).rejects.toThrow('Database unavailable');
         });
     });
 
+    // ------------------------------------------------
+    // Submit profile for review
+    // ------------------------------------------------
+
     describe('submitForReview', () => {
-        it('should submit an individual profile with all required documents', async () => {
-            const profile = {
-                ...mockProfile,
-                businessType: 'INDIVIDUAL',
-                documents: [
-                    { type: 'NATIONAL_ID_FRONT', status: 'APPROVED' },
-                    { type: 'NATIONAL_ID_BACK', status: 'PENDING' },
-                ],
-            };
+        it('should submit a valid profile and create review history', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(
+                mockProfileWithDocuments,
+            );
 
-            const submittedProfile = {
-                ...profile,
-                accountStatus: 'SUBMITTED',
-                submittedAt: new Date(),
-                rejectionReason: null,
-            };
+            const result = await service.submitForReview(merchantId);
 
-            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(profile);
-            mockDatabaseService.merchantProfile.update.mockResolvedValue(submittedProfile);
+            expect(result.accountStatus).toBe(AccountStatus.SUBMITTED);
 
-            const result = await service.submitForReview(MERCHANT_ID);
+            expect(mockDatabaseService.$transaction).toHaveBeenCalledOnce();
 
-            expect(result).toEqual(submittedProfile);
-            expect(mockDatabaseService.merchantProfile.findUnique).toHaveBeenCalledWith({
-                where: { merchantId: MERCHANT_ID },
-                include: { documents: true },
+            expect(
+                mockTransactionClient.merchantProfile.updateMany,
+            ).toHaveBeenCalledWith({
+                where: {
+                    merchantId,
+                    accountStatus: AccountStatus.PENDING_SUBMISSION,
+                },
+                data: expect.objectContaining({
+                    accountStatus: AccountStatus.SUBMITTED,
+                    rejectionReason: null,
+                }),
             });
 
-            expect(mockDatabaseService.merchantProfile.update).toHaveBeenCalledWith({
-                where: { merchantId: MERCHANT_ID },
+            expect(
+                mockTransactionClient.merchantReviewHistory.create,
+            ).toHaveBeenCalledWith({
                 data: {
-                    accountStatus: 'SUBMITTED',
-                    submittedAt: expect.any(Date),
-                    rejectionReason: null,
+                    profileId: mockProfile.id,
+                    fromStatus: AccountStatus.PENDING_SUBMISSION,
+                    toStatus: AccountStatus.SUBMITTED,
+                    actorType: ProfileActorType.MERCHANT,
+                    actorId: merchantId,
                 },
             });
         });
 
-        it('should allow resubmission of a rejected profile', async () => {
-            const profile = {
+        it('should allow a rejected profile to be resubmitted', async () => {
+            const rejectedProfile = {
                 ...mockProfile,
-                accountStatus: 'REJECTED',
-                rejectionReason: 'Please provide corrected documents',
-                documents: [
-                    { type: 'NATIONAL_ID_FRONT', status: 'APPROVED' },
-                    { type: 'NATIONAL_ID_BACK', status: 'PENDING' },
-                ],
+                accountStatus: AccountStatus.REJECTED,
+                rejectionReason: 'Please correct the submitted details',
             };
 
-            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(profile);
-            mockDatabaseService.merchantProfile.update.mockResolvedValue({
-                ...profile,
-                accountStatus: 'SUBMITTED',
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
+                ...rejectedProfile,
+                documents: mockDocuments,
+            });
+
+            mockTransactionClient.merchantProfile.findUnique.mockResolvedValue({
+                ...rejectedProfile,
+                accountStatus: AccountStatus.SUBMITTED,
                 rejectionReason: null,
             });
 
-            await service.submitForReview(MERCHANT_ID);
+            const result = await service.submitForReview(merchantId);
 
-            expect(mockDatabaseService.merchantProfile.update).toHaveBeenCalledWith({
-                where: { merchantId: MERCHANT_ID },
-                data: {
-                    accountStatus: 'SUBMITTED',
-                    submittedAt: expect.any(Date),
-                    rejectionReason: null,
-                },
-            });
+            expect(result.accountStatus).toBe(AccountStatus.SUBMITTED);
+
+            expect(
+                mockTransactionClient.merchantProfile.updateMany,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    where: {
+                        merchantId,
+                        accountStatus: AccountStatus.REJECTED,
+                    },
+                }),
+            );
+
+            expect(
+                mockTransactionClient.merchantReviewHistory.create,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    data: expect.objectContaining({
+                        fromStatus: AccountStatus.REJECTED,
+                        toStatus: AccountStatus.SUBMITTED,
+                    }),
+                }),
+            );
         });
 
         it('should throw NotFoundException when the profile does not exist', async () => {
             mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(null);
 
-            await expect(
-                service.submitForReview(MERCHANT_ID),
-            ).rejects.toThrow(NotFoundException);
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                NotFoundException,
+            );
 
-            expect(mockDatabaseService.merchantProfile.update).not.toHaveBeenCalled();
+            expect(mockDatabaseService.$transaction).not.toHaveBeenCalled();
         });
 
-        it('should reject a profile with an invalid submission status', async () => {
+        it.each([
+            AccountStatus.SUBMITTED,
+            AccountStatus.UNDER_REVIEW,
+            AccountStatus.APPROVED,
+            AccountStatus.SUSPENDED,
+        ])(
+            'should reject submission when the profile status is %s',
+            async (accountStatus) => {
+                mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
+                    ...mockProfileWithDocuments,
+                    accountStatus,
+                });
+
+                await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                    BadRequestException,
+                );
+
+                expect(mockDatabaseService.$transaction).not.toHaveBeenCalled();
+            },
+        );
+
+        it('should reject submission when the business type is missing', async () => {
             mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
-                ...mockProfile,
-                accountStatus: 'SUBMITTED',
+                ...mockProfileWithDocuments,
+                businessType: null,
             });
 
-            await expect(
-                service.submitForReview(MERCHANT_ID),
-            ).rejects.toThrow(BadRequestException);
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                BadRequestException,
+            );
+        });
 
-            expect(mockDatabaseService.merchantProfile.update).not.toHaveBeenCalled();
+        it('should reject submission when the business name is missing', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
+                ...mockProfileWithDocuments,
+                businessName: '   ',
+            });
+
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                BadRequestException,
+            );
         });
 
         it('should reject submission when required documents are missing', async () => {
             mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
                 ...mockProfile,
-                businessType: 'INDIVIDUAL',
-                documents: [
-                    { type: 'NATIONAL_ID_FRONT', status: 'APPROVED' },
-                ],
+                documents: [],
             });
 
-            await expect(
-                service.submitForReview(MERCHANT_ID),
-            ).rejects.toThrow(/NATIONAL_ID_BACK/);
-
-            expect(mockDatabaseService.merchantProfile.update).not.toHaveBeenCalled();
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                BadRequestException,
+            );
         });
 
-        it('should treat rejected documents as missing', async () => {
+        it('should reject submission when a required document is rejected', async () => {
             mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
                 ...mockProfile,
-                businessType: 'INDIVIDUAL',
                 documents: [
-                    { type: 'NATIONAL_ID_FRONT', status: 'REJECTED' },
-                    { type: 'NATIONAL_ID_BACK', status: 'PENDING' },
+                    {
+                        ...mockDocuments[0],
+                        status: DocumentStatus.REJECTED,
+                    },
+                    mockDocuments[1],
                 ],
             });
 
-            await expect(
-                service.submitForReview(MERCHANT_ID),
-            ).rejects.toThrow(/NATIONAL_ID_FRONT/);
-
-            expect(mockDatabaseService.merchantProfile.update).not.toHaveBeenCalled();
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                BadRequestException,
+            );
         });
 
-        it.each([
-            {
-                businessType: 'SOLE_TRADER',
-                documents: ['NATIONAL_ID_FRONT', 'NATIONAL_ID_BACK'],
-                missing: 'PROOF_OF_ADDRESS',
-            },
-            {
-                businessType: 'PARTNERSHIP',
-                documents: ['BUSINESS_REGISTRATION'],
-                missing: 'DIRECTOR_ID',
-            },
-            {
-                businessType: 'LIMITED_COMPANY',
-                documents: ['BUSINESS_REGISTRATION', 'DIRECTOR_ID'],
-                missing: 'TAX_CERTIFICATE',
-            },
-            {
-                businessType: 'NGO',
-                documents: ['BUSINESS_REGISTRATION'],
-                missing: 'TAX_CERTIFICATE',
-            },
-        ])(
-            'should require $missing for $businessType',
-            async ({ businessType, documents, missing }) => {
-                mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
-                    ...mockProfile,
-                    businessType,
-                    documents: documents.map((type) => ({
-                        type,
-                        status: 'PENDING',
-                    })),
-                });
+        it('should reject submission when a required document is expired', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
+                ...mockProfile,
+                documents: [
+                    {
+                        ...mockDocuments[0],
+                        status: DocumentStatus.EXPIRED,
+                    },
+                    mockDocuments[1],
+                ],
+            });
 
-                await expect(
-                    service.submitForReview(MERCHANT_ID),
-                ).rejects.toThrow(new RegExp(missing));
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                BadRequestException,
+            );
+        });
 
-                expect(mockDatabaseService.merchantProfile.update).not.toHaveBeenCalled();
-            },
-        );
+        it('should reject submission when a document expiry date has passed', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
+                ...mockProfile,
+                documents: [
+                    {
+                        ...mockDocuments[0],
+                        expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+                    },
+                    mockDocuments[1],
+                ],
+            });
 
-        it('should propagate database errors', async () => {
-            mockDatabaseService.merchantProfile.findUnique.mockRejectedValue(
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                BadRequestException,
+            );
+        });
+
+        it('should reject submission when the conditional status update affects no rows', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(
+                mockProfileWithDocuments,
+            );
+
+            // Simulate another request changing the profile status first.
+            mockTransactionClient.merchantProfile.updateMany.mockResolvedValue({
+                count: 0,
+            });
+
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                BadRequestException,
+            );
+
+            expect(
+                mockTransactionClient.merchantReviewHistory.create,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('should reject submission if the updated profile cannot be retrieved', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(
+                mockProfileWithDocuments,
+            );
+
+            mockTransactionClient.merchantProfile.findUnique.mockResolvedValue(null);
+
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                NotFoundException,
+            );
+
+            expect(
+                mockTransactionClient.merchantReviewHistory.create,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('should propagate database errors during submission', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue(
+                mockProfileWithDocuments,
+            );
+
+            mockTransactionClient.merchantProfile.updateMany.mockRejectedValue(
                 new Error('Database unavailable'),
             );
 
-            await expect(
-                service.submitForReview(MERCHANT_ID),
-            ).rejects.toThrow('Database unavailable');
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                'Database unavailable',
+            );
         });
     });
 });

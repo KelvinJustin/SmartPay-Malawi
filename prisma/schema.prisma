@@ -26,6 +26,12 @@ enum AccountStatus {
   SUSPENDED
 }
 
+enum ProfileActorType {
+  MERCHANT
+  ADMIN
+  SYSTEM
+}
+
 enum BusinessType {
   INDIVIDUAL
   SOLE_TRADER
@@ -106,9 +112,8 @@ model Admin {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  approvedProfiles   MerchantProfile[]       @relation("ProfileApprovedBy")
-  reviewedDocuments  MerchantDocument[]      @relation("DocumentReviewedBy")
-  reviewHistory      MerchantReviewHistory[] @relation("ReviewPerformedBy")
+  approvedProfiles   MerchantProfile[]   @relation("ProfileApprovedBy")
+  reviewedDocuments  MerchantDocument[]  @relation("DocumentReviewedBy")
   adminRevokedTokens AdminRevokedToken[]
 
   @@index([role, status])
@@ -180,9 +185,9 @@ model MerchantProfile {
   merchantId String @unique @db.Uuid
 
   // Business identity
-  businessName           String
+  businessName           String?
   tradingName            String?
-  businessType           BusinessType
+  businessType           BusinessType?
   businessRegistrationNo String?
   taxIdentificationNo    String? // MRA TPIN
   merchantCategoryCode   String? // ISO 18245 MCC e.g. "5411"
@@ -257,18 +262,19 @@ model MerchantDocument {
 // Append-only audit trail of every profile status change.
 // Rows are never updated or deleted.
 model MerchantReviewHistory {
-  id            String        @id @default(uuid()) @db.Uuid
-  profileId     String        @db.Uuid
-  fromStatus    AccountStatus
-  toStatus      AccountStatus
-  note          String?
-  performedById String        @db.Uuid
-  createdAt     DateTime      @default(now())
+  id         String           @id @default(uuid()) @db.Uuid
+  profileId  String           @db.Uuid
+  fromStatus AccountStatus
+  toStatus   AccountStatus
+  note       String?
+  actorType  ProfileActorType
+  actorId    String?          @db.Uuid
+  createdAt  DateTime         @default(now())
 
-  profile     MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  performedBy Admin           @relation("ReviewPerformedBy", fields: [performedById], references: [id], onDelete: Restrict)
+  profile MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@index([profileId, createdAt])
+  @@index([actorType, actorId])
   @@map("merchant_review_history")
 }
 

@@ -111,7 +111,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.authService.verifyEmail(dto);
-    response.cookie(COOKIE_NAME, result.accessToken, cookieOptions);
+    response.cookie(COOKIE_NAME, cookieOptions);
     return { message: result.message }; // 'Email verified successfully' or 'Email already verified'
   }
 
@@ -143,31 +143,35 @@ export class AuthController {
     return request.user;
   }
 
-  // POST /auth/logout.
-  // @HttpCode(200): POST would normally return 201 Created, but nothing
-  // is being created — a logout is an action, so 200 OK is more correct.
+  // POST /auth/logout
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  logout(
+  async logout(
     @Req()
     request: Request & {
       user: {
         userId: string;
         email: string;
+        jti: string;
+        exp: number;
       };
     },
     @Res({ passthrough: true }) response: Response,
   ) {
-    // @Res({ passthrough: true }) injects the Express response so we can
-    // clear the cookie, BUT passthrough tells Nest to still serialize the
-    // returned object as JSON. Without passthrough, returning an object
-    // here would be ignored (and the response left hanging).
+    // Revoke this specific JWT in the database first.
+    await this.authService.logout({
+      userId: request.user.userId,
+      jti: request.user.jti,
+      exp: request.user.exp,
+    });
+
+    // Clear the browser cookie after revocation succeeds.
     response.clearCookie(COOKIE_NAME, cookieOptions);
 
-    // Confirmation body — serialized to JSON because of passthrough: true.
     return { message: 'Logged out successfully' };
   }
+
 
   // DELETE /auth/account
   // Soft-deletes the authenticated merchant's account.

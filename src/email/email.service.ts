@@ -12,18 +12,37 @@ export class EmailService implements OnModuleInit {
     constructor(private readonly configService: ConfigService) {
         // Configure the SMTP connection using environment-based settings.
         // getOrThrow() ensures the application fails if a required setting is missing.
+
+        const smtpHost = this.configService.getOrThrow<string>('SMTP_SERVER');
+        const smtpPort = Number(
+            this.configService.getOrThrow<string>('SMTP_PORT'),
+        );
+
+        if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
+            throw new Error('SMTP_PORT must be a valid TCP port');
+        }
+
+        const smtpUser = this.configService.get<string>('SMTP_USER');
+        const smtpApiKey = this.configService.get<string>('SMTP_API_KEY');
+
+        const isProduction =
+            this.configService.get<string>('NODE_ENV') === 'production';
+
         this.transporter = nodemailer.createTransport({
-            host: this.configService.getOrThrow<string>('SMTP_SERVER'),
-            port: Number(this.configService.getOrThrow<string>('SMTP_PORT')),
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpPort === 465,
 
-            // Use a standard SMTP connection with STARTTLS where supported.
-            secure: false,
+            ...(smtpUser && smtpApiKey
+                ? {
+                    auth: {
+                        user: smtpUser,
+                        pass: smtpApiKey,
+                    },
+                }
+                : {}),
 
-            // Authenticate with the SMTP credentials provided by the mail service.
-            auth: {
-                user: this.configService.getOrThrow<string>('SMTP_USER'),
-                pass: this.configService.getOrThrow<string>('SMTP_API_KEY'),
-            },
+            ...(!isProduction ? { ignoreTLS: true } : {}),
         });
     }
 

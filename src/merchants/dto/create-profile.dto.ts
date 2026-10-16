@@ -10,17 +10,20 @@ import {
 import { BusinessType } from '../../generated/prisma/enums.js';
 
 export class CreateProfileDto {
+
+  @IsOptional()
   @IsString()
   @MaxLength(100)
-  businessName: string = '';
+  businessName?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(100)
   tradingName?: string;
 
+  @IsOptional()
   @IsEnum(BusinessType)
-  businessType!: BusinessType;
+  businessType?: BusinessType;
 
   @IsOptional()
   @IsString()

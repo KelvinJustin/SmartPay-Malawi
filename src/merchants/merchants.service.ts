@@ -6,30 +6,40 @@ import {
 
 import { DatabaseService } from '../database/database.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
-import { AccountStatus, DocumentType } from '../generated/prisma/enums.js';
+
+import {
+  AccountStatus,
+  BusinessType,
+  DocumentStatus,
+  DocumentType,
+  ProfileActorType,
+} from '../generated/prisma/enums.js';
 
 @Injectable()
 export class MerchantsService {
-  constructor(private readonly databaseService: DatabaseService) { }
+  constructor(
+    private readonly databaseService: DatabaseService,
+  ) { }
 
   // ============================================================
   // PROFILE
   // ============================================================
 
-  // Every merchant gets a blank profile automatically at registration.
-  // This method simply fetches it along with their documents and
-  // settlement accounts so the frontend has everything in one call.
+  /**
+   * Retrieves the authenticated merchant's profile and documents.
+   *
+   * Registration is responsible for creating the profile.
+   * A missing profile therefore indicates an inconsistent state.
+   */
   async getMyProfile(merchantId: string) {
-    const profile = await this.databaseService.merchantProfile.findUnique({
-      where: { merchantId },
-      include: {
-        documents: true,
-      },
-    });
+    const profile =
+      await this.databaseService.merchantProfile.findUnique({
+        where: { merchantId },
+        include: {
+          documents: true,
+        },
+      });
 
-    // This should never happen in normal operation because registration
-    // creates the profile in the same transaction. If it does, it means
-    // the registration transaction was interrupted — worth investigating.
     if (!profile) {
       throw new NotFoundException('Profile not found');
     }
@@ -37,17 +47,38 @@ export class MerchantsService {
     return profile;
   }
 
-  // Merchants can update their business details at any time.
-  // The only fields they cannot touch are approval fields
-  // (accountStatus, approvedAt, approvedById, rejectionReason) —
-  // those are managed exclusively by admins.
-  async updateProfile(merchantId: string, dto: UpdateProfileDto) {
-    const profile = await this.databaseService.merchantProfile.findUnique({
-      where: { merchantId },
-    });
+  /**
+   * Merchants may update their business details while preparing
+   * their application or correcting a rejected application.
+   *
+   * Once submitted for review, the profile is locked against
+   * merchant edits. Approval-related fields must never be
+   * controlled by the merchant.
+   */
+  async updateProfile(
+    merchantId: string,
+    dto: UpdateProfileDto,
+  ) {
+    const profile =
+      await this.databaseService.merchantProfile.findUnique({
+        where: { merchantId },
+      });
 
     if (!profile) {
       throw new NotFoundException('Profile not found');
+    }
+
+    const editableStatuses: AccountStatus[] = [
+      AccountStatus.PENDING_SUBMISSION,
+      AccountStatus.REJECTED,
+    ];
+
+    if (!editableStatuses.includes(profile.accountStatus)) {
+      throw new BadRequestException(
+        `Profile cannot be updated from status: ${profile.accountStatus}. ` +
+        'Updates are only allowed while preparing an application ' +
+        'or correcting a rejected application.',
+      );
     }
 
     return this.databaseService.merchantProfile.update({
@@ -57,77 +88,182 @@ export class MerchantsService {
   }
 
   // ============================================================
+  // DOCUMENT REQUIREMENTS
+  // ============================================================
+
+  /**
+   * Defines the minimum document types required for each
+   * business category.
+   *
+   * Keep these requirements aligned with the KYC policy.
+   */
+  private readonly requiredDocuments: Record<
+    BusinessType,
+    DocumentType[]
+  > = {
+      [BusinessType.INDIVIDUAL]: [
+        DocumentType.NATIONAL_ID_FRONT,
+        DocumentType.NATIONAL_ID_BACK,
+      ],
+
+      [BusinessType.SOLE_TRADER]: [
+        DocumentType.NATIONAL_ID_FRONT,
+        DocumentType.NATIONAL_ID_BACK,
+        DocumentType.PROOF_OF_ADDRESS,
+      ],
+
+      [BusinessType.PARTNERSHIP]: [
+        DocumentType.BUSINESS_REGISTRATION,
+        DocumentType.DIRECTOR_ID,
+      ],
+
+      [BusinessType.LIMITED_COMPANY]: [
+        DocumentType.BUSINESS_REGISTRATION,
+        DocumentType.TAX_CERTIFICATE,
+        DocumentType.DIRECTOR_ID,
+      ],
+
+      [BusinessType.NGO]: [
+        DocumentType.BUSINESS_REGISTRATION,
+        DocumentType.TAX_CERTIFICATE,
+      ],
+    };
+
+  // ============================================================
   // SUBMISSION
   // ============================================================
 
-  // The merchant calls this when they believe their profile and documents
-  // are complete and ready for admin review. This is the handoff point —
-  // after this, the ball is in the admin's court.
-  //
-  // Allowed from:
-  //   PENDING_SUBMISSION → first-time submission
-  //   REJECTED           → resubmission after fixing issues flagged by admin
-  //
-  // The required documents check ensures the merchant can't submit with
-  // missing identity verification. Required documents vary by business type:
-  //   INDIVIDUAL      → NATIONAL_ID_FRONT, NATIONAL_ID_BACK
-  //   SOLE_TRADER     → NATIONAL_ID_FRONT, NATIONAL_ID_BACK, PROOF_OF_ADDRESS
-  //   PARTNERSHIP     → BUSINESS_REGISTRATION, DIRECTOR_ID
-  //   LIMITED_COMPANY → BUSINESS_REGISTRATION, TAX_CERTIFICATE, DIRECTOR_ID
-  //   NGO             → BUSINESS_REGISTRATION, TAX_CERTIFICATE
-  private readonly requiredDocuments: Record<string, string[]> = {
-    INDIVIDUAL: ['NATIONAL_ID_FRONT', 'NATIONAL_ID_BACK'],
-    SOLE_TRADER: ['NATIONAL_ID_FRONT', 'NATIONAL_ID_BACK', 'PROOF_OF_ADDRESS',],
-    PARTNERSHIP: ['BUSINESS_REGISTRATION', 'DIRECTOR_ID'],
-    LIMITED_COMPANY: ['BUSINESS_REGISTRATION', 'TAX_CERTIFICATE', 'DIRECTOR_ID'],
-    NGO: ['BUSINESS_REGISTRATION', 'TAX_CERTIFICATE'],
-  };
-
+  /**
+   * Submits a merchant profile for administrative review.
+   *
+   * Allowed transitions:
+   *
+   * PENDING_SUBMISSION -> SUBMITTED
+   * REJECTED           -> SUBMITTED
+   *
+   * The profile status change and audit-history entry are
+   * committed in one database transaction.
+   */
   async submitForReview(merchantId: string) {
-    const profile = await this.databaseService.merchantProfile.findUnique({
-      where: { merchantId },
-      include: { documents: true },
-    });
+    const profile =
+      await this.databaseService.merchantProfile.findUnique({
+        where: { merchantId },
+        include: {
+          documents: true,
+        },
+      });
 
     if (!profile) {
       throw new NotFoundException('Profile not found');
     }
 
-    const submittableStatuses = ['PENDING_SUBMISSION', 'REJECTED'];
+    // Only initial submissions and rejected applications can
+    // enter the submission workflow.
+    const submittableStatuses: AccountStatus[] = [
+      AccountStatus.PENDING_SUBMISSION,
+      AccountStatus.REJECTED,
+    ];
 
     if (!submittableStatuses.includes(profile.accountStatus)) {
       throw new BadRequestException(
         `Cannot submit from status: ${profile.accountStatus}. ` +
-        `Submission is only allowed from PENDING_SUBMISSION or REJECTED.`,
+        'Submission is only allowed from PENDING_SUBMISSION or REJECTED.',
       );
     }
 
-    // Only count documents that are not rejected — a rejected document
-    // must be re-uploaded before the merchant can resubmit.
+    // Business type determines which documents are mandatory.
+    if (!profile.businessType) {
+      throw new BadRequestException(
+        'Business type must be provided before submission.',
+      );
+    }
+
+    // Reject missing or whitespace-only business names.
+    if (!profile.businessName?.trim()) {
+      throw new BadRequestException(
+        'Business name must be provided before submission.',
+      );
+    }
+
+    // A document cannot satisfy a requirement if it has been
+    // rejected, explicitly expired, or passed its expiry date.
+    //
+    // Pending documents are accepted for submission because
+    // their verification can take place during admin review.
+    const now = new Date();
+
     const uploadedTypes = profile.documents
-      .filter((doc) => doc.status !== 'REJECTED')
+      .filter(
+        (doc) =>
+          doc.status !== DocumentStatus.REJECTED &&
+          doc.status !== DocumentStatus.EXPIRED &&
+          (!doc.expiresAt || doc.expiresAt > now),
+      )
       .map((doc) => doc.type);
 
-    const required = this.requiredDocuments[profile.businessType] ?? [];
+    const required = this.requiredDocuments[profile.businessType];
 
-    const missing = required.filter((type) => !uploadedTypes.includes(type as DocumentType));
+    const missing = required.filter(
+      (type: DocumentType) => !uploadedTypes.includes(type),
+    );
 
     if (missing.length > 0) {
       throw new BadRequestException(
-        `Cannot submit. The following required documents are missing or rejected: ` +
-        `${missing.join(', ')}.`,
+        'Cannot submit. The following required documents are ' +
+        `missing, rejected, or expired: ${missing.join(', ')}.`,
       );
     }
 
-    // Clear the old rejection reason on resubmission so the admin
-    // sees a clean slate and isn't confused by stale feedback.
-    return this.databaseService.merchantProfile.update({
-      where: { merchantId },
-      data: {
-        accountStatus: 'SUBMITTED',
-        submittedAt: new Date(),
-        rejectionReason: null,
-      },
+    // Update the profile and create its audit entry atomically.
+    //
+    // If either operation fails, Prisma rolls back the
+    // transaction so the profile cannot be submitted without
+    // its corresponding review-history record.
+    return this.databaseService.$transaction(async (tx) => {
+      // Change the status only if it still matches the status
+      // we validated before entering the transaction.
+      const transition = await tx.merchantProfile.updateMany({
+        where: {
+          merchantId,
+          accountStatus: profile.accountStatus,
+        },
+        data: {
+          accountStatus: AccountStatus.SUBMITTED,
+          submittedAt: new Date(),
+          rejectionReason: null,
+        },
+      });
+
+      // Zero updated rows means another request or process changed
+      // the status before this request could claim the transition.
+      if (transition.count !== 1) {
+        throw new BadRequestException(
+          'Profile status has changed. Refresh your profile and try again.',
+        );
+      }
+
+      // Retrieve the updated profile because updateMany returns
+      // a count, not the updated record.
+      const updatedProfile = await tx.merchantProfile.findUnique({
+        where: { merchantId },
+      });
+
+      if (!updatedProfile) {
+        throw new NotFoundException('Profile not found');
+      }
+
+      // Record the successful transition in the same transaction.
+      await tx.merchantReviewHistory.create({
+        data: {
+          profileId: profile.id,
+          fromStatus: profile.accountStatus,
+          toStatus: AccountStatus.SUBMITTED,
+          actorType: ProfileActorType.MERCHANT,
+          actorId: merchantId,
+        },
+      });
+
+      return updatedProfile;
     });
   }
 }

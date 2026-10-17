@@ -70,10 +70,7 @@ async function main(): Promise<void> {
         businessName: fixture.businessName,
         businessType: fixture.businessType,
         accountStatus: fixture.status,
-        submittedAt:
-          fixture.status === AccountStatus.PENDING_SUBMISSION
-            ? null
-            : new Date(),
+        submittedAt: new Date(),
         rejectionReason:
           fixture.status === AccountStatus.REJECTED
             ? "Development fixture: additional information required."
@@ -84,10 +81,7 @@ async function main(): Promise<void> {
         businessName: fixture.businessName,
         businessType: fixture.businessType,
         accountStatus: fixture.status,
-        submittedAt:
-          fixture.status === AccountStatus.PENDING_SUBMISSION
-            ? null
-            : new Date(),
+        submittedAt: new Date(),
         rejectionReason:
           fixture.status === AccountStatus.REJECTED
             ? "Development fixture: additional information required."
@@ -110,7 +104,7 @@ async function main(): Promise<void> {
         update: {
           status:
             fixture.status === AccountStatus.REJECTED &&
-            type === DocumentType.NATIONAL_ID_FRONT
+              type === DocumentType.NATIONAL_ID_FRONT
               ? DocumentStatus.REJECTED
               : DocumentStatus.PENDING,
           fileUrl: `dev-fixture://${profile.id}/${type}`,
@@ -119,7 +113,7 @@ async function main(): Promise<void> {
           fileSizeBytes: 1024,
           rejectionNote:
             fixture.status === AccountStatus.REJECTED &&
-            type === DocumentType.NATIONAL_ID_FRONT
+              type === DocumentType.NATIONAL_ID_FRONT
               ? "Development fixture: sample document rejected."
               : null,
         },
@@ -128,7 +122,7 @@ async function main(): Promise<void> {
           type,
           status:
             fixture.status === AccountStatus.REJECTED &&
-            type === DocumentType.NATIONAL_ID_FRONT
+              type === DocumentType.NATIONAL_ID_FRONT
               ? DocumentStatus.REJECTED
               : DocumentStatus.PENDING,
           fileUrl: `dev-fixture://${profile.id}/${type}`,
@@ -137,7 +131,7 @@ async function main(): Promise<void> {
           fileSizeBytes: 1024,
           rejectionNote:
             fixture.status === AccountStatus.REJECTED &&
-            type === DocumentType.NATIONAL_ID_FRONT
+              type === DocumentType.NATIONAL_ID_FRONT
               ? "Development fixture: sample document rejected."
               : null,
         },

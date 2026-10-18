@@ -341,6 +341,7 @@ Generate the Prisma Client if required:
 
 ```bash
 npx prisma generate
+npx prisma migrate deploy
 ```
 
 Start NestJS in watch mode:

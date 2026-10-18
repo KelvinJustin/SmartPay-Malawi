@@ -41,7 +41,7 @@ Sends the 6-digit OTP issued during merchant registration.
 await this.emailService.sendVerificationCode('merchant@example.com', '048291');
 ```
 
-**Subject:** `Verify your SmartPay email`
+**Subject:** `Verify your Solaris email`
 
 **Behaviour in `AuthService`:**
 - Called after the merchant record and `OtpChallenge` are created.
@@ -61,7 +61,7 @@ Sends the 6-digit OTP for the second factor of the login flow.
 await this.emailService.sendLoginCode('merchant@example.com', '739102');
 ```
 
-**Subject:** `Your SmartPay login verification code`
+**Subject:** `Your Solaris login verification code`
 
 **Behaviour in `AuthService`:**
 - The `OtpChallenge` row is written to the database **before** this is called.
@@ -97,13 +97,13 @@ itself — keep it generic.
 async sendApprovalNotification(to: string, businessName: string) {
   return this.sendEmail(
     to,
-    'Your SmartPay account has been approved',
+    'Your Solaris account has been approved',
     `Hi ${businessName},
 
-Your SmartPay merchant account has been reviewed and approved.
+Your Solaris merchant account has been reviewed and approved.
 You can now accept payments.
 
-Log in to your dashboard: https://dashboard.smartpay.mw`,
+Log in to your dashboard: https://dashboard.Solaris.mw`,
   );
 }
 ```
@@ -133,7 +133,7 @@ SMTP_SERVER=localhost
 SMTP_PORT=1025
 SMTP_USER=
 SMTP_API_KEY=
-SMTP_FROM=SmartPay <noreply@smartpay.mw>
+SMTP_FROM=Solaris <noreply@Solaris.mw>
 ```
 
 Mailpit's web UI is available at `http://localhost:8025` by default.

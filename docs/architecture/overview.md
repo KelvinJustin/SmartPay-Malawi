@@ -1,13 +1,13 @@
-# SmartPay Architecture Overview
+# Solaris Architecture Overview
 
 > **Status:** Draft
 > **Last Updated:** October 2026
 
 ## 1. Purpose
 
-This document describes the high-level technical architecture of **SmartPay Malawi**.
+This document describes the high-level technical architecture of **Solaris Malawi**.
 
-SmartPay is an API-first payment gateway and integration layer that provides merchants with a unified interface for interacting with multiple payment providers in the Malawian payment ecosystem.
+Solaris is an API-first payment gateway and integration layer that provides merchants with a unified interface for interacting with multiple payment providers in the Malawian payment ecosystem.
 
 The architecture is designed around four primary goals:
 
@@ -20,12 +20,12 @@ The architecture is designed around four primary goals:
 
 ## 2. Architectural Style
 
-SmartPay is being developed as a **modular monolith**.
+Solaris is being developed as a **modular monolith**.
 
 The application runs as a single backend deployment, while its internal functionality is separated into well-defined business modules.
 
 ```text
-                    SmartPay API
+                    Solaris API
                          │
         ┌────────────────┼────────────────┐
         │                │                │
@@ -49,7 +49,7 @@ The architecture should maintain clear module boundaries so that individual comp
 
 ## 3. High-Level System
 
-The core system consists of the SmartPay API, PostgreSQL, Redis, and external payment providers.
+The core system consists of the Solaris API, PostgreSQL, Redis, and external payment providers.
 
 ```text
                          Merchant
@@ -57,7 +57,7 @@ The core system consists of the SmartPay API, PostgreSQL, Redis, and external pa
                             │ HTTPS
                             ▼
                     ┌───────────────┐
-                    │  SmartPay API │
+                    │  Solaris API │
                     │    NestJS     │
                     └───────┬───────┘
                             │
@@ -94,9 +94,9 @@ The development environment currently uses **Neon PostgreSQL** as the hosted Pos
 
 ## 4. Core Components
 
-### 4.1 SmartPay API
+### 4.1 Solaris API
 
-The SmartPay API is the primary entry point for merchant applications.
+The Solaris API is the primary entry point for merchant applications.
 
 It is responsible for:
 
@@ -116,7 +116,7 @@ The API should remain independent of individual payment-provider implementations
 
 ### 4.2 Merchant Module
 
-The Merchant module manages entities and functionality related to businesses integrating with SmartPay.
+The Merchant module manages entities and functionality related to businesses integrating with Solaris.
 
 Potential responsibilities include:
 
@@ -135,7 +135,7 @@ The exact merchant model will evolve as the business requirements are finalized.
 
 The Payment module represents the core business domain.
 
-It manages the lifecycle of payments initiated through SmartPay.
+It manages the lifecycle of payments initiated through Solaris.
 
 A simplified lifecycle is:
 
@@ -159,7 +159,7 @@ Settled
 
 Provider-specific statuses should not leak directly into the merchant-facing API.
 
-Instead, SmartPay should maintain a normalized internal payment state model and map provider-specific responses into that model.
+Instead, Solaris should maintain a normalized internal payment state model and map provider-specific responses into that model.
 
 ---
 
@@ -199,7 +199,7 @@ This allows additional providers to be added without changing merchant-facing pa
 
 ## 5. Webhook Processing
 
-Payment providers may notify SmartPay asynchronously after a payment has been initiated.
+Payment providers may notify Solaris asynchronously after a payment has been initiated.
 
 A typical flow is:
 
@@ -207,7 +207,7 @@ A typical flow is:
 Merchant
    │
    ▼
-SmartPay
+Solaris
    │
    ▼
 Provider
@@ -218,7 +218,7 @@ Provider
 Provider Webhook
    │
    ▼
-SmartPay Webhook Handler
+Solaris Webhook Handler
    │
    ▼
 Payment State Update
@@ -305,7 +305,7 @@ Examples include:
 Where background job processing becomes necessary, **BullMQ** will be introduced on top of Redis.
 
 ```text
-SmartPay API
+Solaris API
      │
      ▼
    Redis
@@ -329,7 +329,7 @@ BullMQ is intentionally not treated as a core dependency until concrete asynchro
 
 Payment infrastructure must assume that external systems can fail.
 
-SmartPay should account for:
+Solaris should account for:
 
 * Network failures
 * Provider downtime
@@ -383,12 +383,12 @@ Webhook processing should use the same principle to prevent duplicate provider c
 
 ## 11. Reconciliation
 
-Provider responses and SmartPay records may occasionally become inconsistent.
+Provider responses and Solaris records may occasionally become inconsistent.
 
 Reconciliation provides a mechanism for detecting and resolving these discrepancies.
 
 ```text
-SmartPay Transactions
+Solaris Transactions
           │
           ▼
     Reconciliation
@@ -412,14 +412,14 @@ Reconciliation is particularly important for payment systems because a successfu
 
 ## 12. Security Boundaries
 
-The SmartPay API is exposed to merchant applications, while provider integrations communicate with external payment networks.
+The Solaris API is exposed to merchant applications, while provider integrations communicate with external payment networks.
 
 ```text
 Merchant
    │
  HTTPS
    ▼
-SmartPay API
+Solaris API
    │
    ├── Authentication
    ├── Authorization
@@ -459,7 +459,7 @@ The current development environment is intentionally lightweight.
                      ┌─────┴─────┐
                      │           │
                      ▼           ▼
-                SmartPay API   Redis
+                Solaris API   Redis
                      │
                      │
                      ▼
@@ -476,7 +476,7 @@ This keeps the local development environment lightweight while allowing the team
 
 ## 14. Frontend Separation
 
-The SmartPay frontend is intentionally separate from the payment API.
+The Solaris frontend is intentionally separate from the payment API.
 
 ```text
                 ┌──────────────┐
@@ -486,7 +486,7 @@ The SmartPay frontend is intentionally separate from the payment API.
                        │ HTTPS
                        ▼
                 ┌──────────────┐
-                │ SmartPay API │
+                │ Solaris API │
                 └──────────────┘
 ```
 
@@ -497,7 +497,7 @@ Potential clients include:
 * Merchant web applications
 * Merchant mobile applications
 * Internal administration tools
-* Other systems integrating through the SmartPay API
+* Other systems integrating through the Solaris API
 
 ---
 
@@ -542,7 +542,7 @@ The current architecture follows these principles:
 4. **Persistent** — financial state is stored durably.
 5. **Idempotent** — retries must not create duplicate transactions.
 6. **Asynchronous where appropriate** — long-running work should not unnecessarily block API requests.
-7. **Reconciliable** — SmartPay records must be verifiable against provider records.
+7. **Reconciliable** — Solaris records must be verifiable against provider records.
 8. **Secure by design** — credentials and sensitive payment information require explicit protection.
 9. **Simple until necessary** — infrastructure complexity should be introduced only when the system requires it.
 10. **Extensible** — new payment providers should be addable without redesigning the core payment domain.

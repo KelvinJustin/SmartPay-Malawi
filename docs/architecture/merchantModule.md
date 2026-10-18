@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The `merchants` module manages merchant business profiles and the initial Know Your Customer (KYC) application workflow for SmartPay Malawi.
+The `merchants` module manages merchant business profiles and the initial Know Your Customer (KYC) application workflow for Solaris Malawi.
 
 It allows authenticated merchants to:
 
@@ -346,6 +346,6 @@ These should be implemented or confirmed as the project progresses.
 
 ## 11. Summary
 
-The `merchants` module provides the initial business-profile and KYC submission workflow for SmartPay Malawi. It controls when merchants may edit their profiles, checks required document records, and records successful application submissions transactionally.
+The `merchants` module provides the initial business-profile and KYC submission workflow for Solaris Malawi. It controls when merchants may edit their profiles, checks required document records, and records successful application submissions transactionally.
 
 Administrator review and final approval remain separate responsibilities. Submission and admin approval use the shared document policy and exclude superseded documents. Pending current documents may satisfy submission requirements, while approval requires approved current documents.

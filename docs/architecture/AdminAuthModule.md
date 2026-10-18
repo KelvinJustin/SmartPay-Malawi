@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The `admin-auth` module handles administrator authentication and session management for SmartPay Malawi.
+The `admin-auth` module handles administrator authentication and session management for Solaris Malawi.
 
 It provides three endpoints:
 
@@ -338,6 +338,6 @@ Recommended improvements before production include:
 
 ## 12. Summary
 
-The `admin-auth` module provides the authentication foundation for SmartPay Malawi's administrative API. It verifies administrator credentials, manages JWT sessions through an HTTP-only cookie, supports token revocation, and exposes the current administrator's identity.
+The `admin-auth` module provides the authentication foundation for Solaris Malawi's administrative API. It verifies administrator credentials, manages JWT sessions through an HTTP-only cookie, supports token revocation, and exposes the current administrator's identity.
 
 Authorization is handled separately through role-based guards. Keeping authentication, authorization, and administrator provisioning separate makes the administrative security model easier to maintain and extend.

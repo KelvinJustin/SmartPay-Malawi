@@ -76,6 +76,7 @@ export class AuthController {
   // invalid payloads get a 400 automatically.
   @Post('register')
   register(@Body() dto: RegisterAuthDto) {
+    // Delegate merchant registration logic to the authentication service.
     return this.authService.register(dto);
   }
 
@@ -83,6 +84,7 @@ export class AuthController {
   // a one-time login code to the merchant. No token is issued here yet.
   @Post('login')
   login(@Body() dto: LoginAuthDto) {
+    // Delegate initial login validation and OTP dispatch to the authentication service.
     return this.authService.login(dto);
   }
 
@@ -95,8 +97,11 @@ export class AuthController {
     @Body() dto: VerifyLoginDto,
     @Res({ passthrough: true }) response: Response,
   ) {
+    // Verify the one-time login code and generate an access token.
     const result = await this.authService.verifyLogin(dto);
+    // Attach the newly generated JWT access token as an HTTP-only cookie on the response.
     response.cookie(COOKIE_NAME, result.accessToken, cookieOptions);
+    // Return a success message confirming the login operation.
     return { message: 'Login successful' };
   }
 
@@ -108,10 +113,10 @@ export class AuthController {
   @Post('verify-email')
   async verifyEmail(
     @Body() dto: VerifyEmailDto,
-    @Res({ passthrough: true }) response: Response,
   ) {
+    // Delegate email verification processing to the authentication service.
     const result = await this.authService.verifyEmail(dto);
-    response.cookie(COOKIE_NAME, cookieOptions);
+    // Return the response message confirming the email verification status.
     return { message: result.message }; // 'Email verified successfully' or 'Email already verified'
   }
 
@@ -169,6 +174,7 @@ export class AuthController {
     // Clear the browser cookie after revocation succeeds.
     response.clearCookie(COOKIE_NAME, cookieOptions);
 
+    // Return a success payload confirming the logout operation.
     return { message: 'Logged out successfully' };
   }
 
@@ -180,6 +186,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Delete('account')
   deleteAccount(@CurrentUser() user: { userId: string }) {
+    // Delegate the soft-deletion of the authenticated merchant account to the authentication service.
     return this.authService.deleteAccount(user.userId);
   }
 

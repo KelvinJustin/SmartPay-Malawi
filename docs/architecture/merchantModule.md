@@ -1,356 +1,351 @@
-# SmartPay Malawi — Merchant API Reference
+# Merchants Module
 
-> **Auth:** All endpoints require a valid JWT sent as an `httpOnly` cookie (`access_token`) or `Authorization: Bearer <token>` header.
+## 1. Overview
 
----
+The `merchants` module manages merchant business profiles and the initial Know Your Customer (KYC) application workflow for SmartPay Malawi.
 
-## How Authentication Works
+It allows authenticated merchants to:
 
-After login or email verification, the server sets an `httpOnly` cookie called `access_token`. Every subsequent request sends it automatically. If you are testing in Postman, copy the token and send it as `Authorization: Bearer <token>` instead.
+- Retrieve their business profile and uploaded document records.
+- Update their business details while preparing an application.
+- Submit their application for administrative review.
+- Correct and resubmit an application after rejection.
 
----
+The module uses NestJS, Prisma, and PostgreSQL. It relies on the existing merchant authentication system to identify the merchant making each request.
 
----
+**Important:** This module currently manages profile data and document records. It does not implement the actual document upload or cloud-storage workflow.
 
-## Account Endpoints
+## 2. Responsibilities
 
-### DELETE /auth/account
+The module is responsible for:
 
-Soft-deletes the authenticated merchant's account. The account is marked as deleted but no data is removed — financial records, audit trails, and KYC documents are preserved for reconciliation.
+- Retrieving the authenticated merchant's profile.
+- Updating editable business profile fields.
+- Enforcing profile status restrictions.
+- Checking required document types before submission.
+- Validating business name and business type.
+- Transitioning eligible profiles to `SUBMITTED`.
+- Recording profile status transitions in `MerchantReviewHistory`.
+- Using a database transaction to keep submission and its audit record consistent.
 
-After deletion:
-- All future requests with the existing JWT are immediately rejected
-- The merchant profile is suspended so it cannot be approved or used for payouts
-- The account cannot be recovered through the API
+Administrator review, approval, and rejection are handled by the separate `admin` module.
 
-**Request:** No body needed.
+## 3. Endpoints
 
-**Response 200:**
+All endpoints use the `/v1` API prefix and require merchant authentication through `JwtAuthGuard`.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/v1/merchants/profile` | Retrieve the current merchant's profile and documents |
+| PATCH | `/v1/merchants/profile` | Update editable profile details |
+| POST | `/v1/merchants/profile/submit` | Submit the application for review |
+
+The controller obtains the merchant ID through `@CurrentUser('userId')`. The client does not need to send a merchant ID in the request body or URL.
+
+### 3.1 Get Merchant Profile
+
+**Endpoint**
+
+`GET {{baseUrl}}/v1/merchants/profile`
+
+**Request body:** None.
+
+**Authentication:** Required.
+
+**Purpose**
+
+Retrieves the authenticated merchant's profile, including its associated document records.
+
+**Successful response — HTTP 200**
+
+The returned profile includes fields from the `MerchantProfile` database model and a `documents` array.
+
+The exact fields depend on the Prisma schema and the records in the database. For example, the response may include:
+
 ```json
 {
-  "message": "Account deleted successfully"
-}
-```
-
-**Errors:**
-| Status | Message | Reason |
-|--------|---------|--------|
-| 401 | Unauthorized | JWT missing or expired |
-| 401 | Account not found | Account already deleted |
-
-## Profile Endpoints
-
-### GET /merchants/profile
-
-Fetch the authenticated merchant's full profile including their uploaded documents and settlement accounts.
-
-**Request:** No body needed.
-
-**Response 200:**
-```json
-{
-  "id": "7b8f9e01-1234-4a5b-8c6d-9e0f1a2b3c4d",
-  "merchantId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "businessName": "",
-  "tradingName": null,
-  "businessType": "INDIVIDUAL",
-  "businessRegistrationNo": null,
-  "taxIdentificationNo": null,
-  "merchantCategoryCode": null,
-  "industryDescription": null,
-  "supportEmail": null,
-  "supportPhone": null,
-  "websiteUrl": null,
-  "addressLine1": null,
-  "addressLine2": null,
-  "city": null,
-  "district": null,
-  "country": "MW",
-  "logoUrl": null,
+  "merchantId": "merchant-uuid",
+  "businessName": "Example Trading",
+  "businessType": "SOLE_TRADER",
   "accountStatus": "PENDING_SUBMISSION",
-  "rejectionReason": null,
-  "approvedAt": null,
-  "approvedById": null,
-  "submittedAt": null,
-  "createdAt": "2026-10-15T01:30:00.000Z",
-  "updatedAt": "2026-10-15T01:30:00.000Z",
-  "documents": [],
-  "settlementAccounts": []
+  "documents": []
 }
 ```
 
-**Errors:**
-| Status | Message | Reason |
-|--------|---------|--------|
-| 401 | Unauthorized | JWT missing or expired |
-| 404 | Profile not found | Profile row missing — should not happen after registration |
+This is an illustrative response, not a guarantee of the exact field set or values.
 
----
+If no profile exists, the service returns HTTP 404 Not Found.
 
-### PATCH /merchants/profile
+### 3.2 Update Merchant Profile
 
-Update any business details on the profile. All fields are optional — only send what you want to change. Approval fields (`accountStatus`, `approvedAt`, `rejectionReason`) are ignored even if sent — only admins control those.
+**Endpoint**
 
-**Request body (send only the fields you want to change):**
+`PATCH {{baseUrl}}/v1/merchants/profile`
+
+**Request headers**
+
+`Content-Type: application/json`
+
+**Request body**
+
+The request must contain fields accepted by `UpdateProfileDto`. For example, assuming these fields are permitted by the DTO:
+
 ```json
 {
-  "businessName": "Lakeview Retailers Ltd",
-  "tradingName": "Lakeview Supermarket",
-  "businessType": "LIMITED_COMPANY",
-  "businessRegistrationNo": "CO-2024-98712",
-  "taxIdentificationNo": "TPIN-20039182",
-  "merchantCategoryCode": "5411",
-  "industryDescription": "Grocery Stores and Supermarkets",
-  "supportEmail": "support@lakeview.mw",
-  "supportPhone": "+265991234567",
-  "websiteUrl": "https://lakeview.mw",
-  "addressLine1": "Victoria Avenue, Plot 14",
-  "addressLine2": "Shop 4, Ground Floor",
-  "city": "Blantyre",
-  "district": "Blantyre"
+  "businessName": "Example Trading",
+  "businessType": "SOLE_TRADER"
 }
 ```
 
-**Field reference:**
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| businessName | string | No | Max 100 chars |
-| tradingName | string | No | Customer-facing brand name |
-| businessType | enum | No | `INDIVIDUAL`, `SOLE_TRADER`, `PARTNERSHIP`, `LIMITED_COMPANY`, `NGO` |
-| businessRegistrationNo | string | No | Registrar of Companies number |
-| taxIdentificationNo | string | No | MRA TPIN |
-| merchantCategoryCode | string | No | 4-digit ISO MCC e.g. `5411` for grocery |
-| industryDescription | string | No | Plain description of business activity |
-| supportEmail | string | No | Must be valid email format |
-| supportPhone | string | No | Malawian number e.g. `+265991234567` |
-| websiteUrl | string | No | Must be valid URL |
-| addressLine1 | string | No | Street / building |
-| addressLine2 | string | No | Suite, floor, plot |
-| city | string | No | e.g. Blantyre, Lilongwe |
-| district | string | No | Malawian district |
+Only send fields supported by the actual DTO and its validation rules.
 
-**Response 200** — returns the full updated profile (same shape as GET above).
+**Purpose**
 
-**Errors:**
-| Status | Message | Reason |
-|--------|---------|--------|
-| 400 | Validation failed | Invalid field format e.g. bad email |
-| 401 | Unauthorized | JWT missing or expired |
-| 404 | Profile not found | Profile row missing |
+Updates the authenticated merchant's editable profile fields.
 
----
+**Profile status restrictions**
 
-### POST /merchants/profile/submit
+Profile updates are permitted only when the application is in one of these states:
 
-Submit the profile for admin review. This is the merchant saying "I'm done, please check my documents." After this the profile moves to `SUBMITTED` status and waits for an admin to pick it up.
+- `PENDING_SUBMISSION`
+- `REJECTED`
 
-**Rules:**
-- Only allowed from `PENDING_SUBMISSION` (first time) or `REJECTED` (resubmission after fixes)
-- Required documents must be uploaded and not rejected before submission is allowed
-- Required documents vary by `businessType`:
+Updates are rejected for profiles in other states. Merchants cannot use this endpoint to change approval-related fields such as `accountStatus`, `approvedAt`, or `approvedById`.
 
-| Business Type | Required Documents |
-|---------------|-------------------|
-| INDIVIDUAL | `NATIONAL_ID_FRONT`, `NATIONAL_ID_BACK` |
-| SOLE_TRADER | `NATIONAL_ID_FRONT`, `NATIONAL_ID_BACK`, `PROOF_OF_ADDRESS` |
-| PARTNERSHIP | `BUSINESS_REGISTRATION`, `DIRECTOR_ID` |
-| LIMITED_COMPANY | `BUSINESS_REGISTRATION`, `TAX_CERTIFICATE`, `DIRECTOR_ID` |
-| NGO | `BUSINESS_REGISTRATION`, `TAX_CERTIFICATE` |
+**Possible responses**
 
-**Request:** No body needed.
+- `200 OK` — profile updated.
+- `400 Bad Request` — profile status does not permit editing, or the DTO fails validation.
+- `401 Unauthorized` — authentication is missing or invalid.
+- `404 Not Found` — profile does not exist.
 
-**Response 200:**
+### 3.3 Submit Merchant Application
+
+**Endpoint**
+
+`POST {{baseUrl}}/v1/merchants/profile/submit`
+
+**Request body:** None.
+
+**Authentication:** Required.
+
+**Purpose**
+
+Validates the merchant's profile and document records, then submits the application for administrative review.
+
+**Submission requirements**
+
+Before submission, the service verifies that:
+
+1. A profile exists.
+2. The profile status is `PENDING_SUBMISSION` or `REJECTED`.
+3. A business type has been selected.
+4. A non-empty business name has been provided.
+5. Required document types have been uploaded and have not been rejected or expired.
+6. Required documents have not passed their recorded expiry dates.
+
+Pending documents may satisfy the initial submission check. They do not automatically qualify for application approval: administrators must verify the documents as part of the review workflow.
+
+**Successful response — HTTP 200**
+
+The service returns the updated profile after changing its status to `SUBMITTED`.
+
+**Status transitions**
+
+```text
+PENDING_SUBMISSION ──> SUBMITTED
+
+REJECTED ────────────> SUBMITTED
+```
+
+During the transaction, the service:
+
+1. Conditionally updates the profile status.
+2. Sets `submittedAt`.
+3. Clears the previous `rejectionReason`.
+4. Creates a `MerchantReviewHistory` entry.
+5. Returns the updated profile.
+
+If the status changes before the update succeeds, the operation is rejected rather than silently overwriting the competing change.
+
+## 4. Business Types and Document Requirements
+
+The document policy helper in `document-requirements.ts` defines required and optional document types for each business category.
+
+| Business type | Required documents | Optional documents |
+|---|---|---|
+| `INDIVIDUAL` | National ID front and back | Tax certificate, proof of address |
+| `SOLE_TRADER` | National ID front and back | Business registration, tax certificate, proof of address |
+| `PARTNERSHIP` | National ID front and back, business registration | Tax certificate, proof of address, director ID |
+| `LIMITED_COMPANY` | National ID front and back, business registration, tax certificate, director ID | Proof of address |
+| `NGO` | National ID front and back, business registration, director ID | Tax certificate, proof of address |
+
+The `getDocumentRequirements()` helper returns copies of the required and optional arrays to prevent callers from accidentally modifying the underlying policy.
+
+Submission validation uses `getDocumentRequirements()` as the shared source of required document types, consistent with admin approval.
+
+These are initial development rules, not definitive legal requirements for Malawi. Confirm the final policy with the relevant compliance and legal stakeholders before production use.
+
+## 5. Document Validation Rules
+
+The current submission implementation considers a document eligible for satisfying a required type when:
+
+- Both `supersededAt` and `supersededByDocumentId` are null.
+- Its status is not `REJECTED`.
+- Its status is not `EXPIRED`.
+- It has no expiry date, or its expiry date is in the future.
+
+This means a document with status `PENDING` can satisfy the submission-stage check.
+
+Superseded documents are excluded from submission validation, consistent with admin approval. They remain in the database for history and do not satisfy required document types.
+
+The service validates document records; it does not prove that a real file exists, is authentic, or has been securely stored.
+
+## 6. Application Lifecycle
+
+The merchant module supports the initial submission and resubmission stages.
+
+```text
+PENDING_SUBMISSION
+        |
+        | Merchant submits application
+        v
+    SUBMITTED
+        |
+        | Administrator starts review
+        v
+   UNDER_REVIEW
+      /     \
+     /       \
+ APPROVED   REJECTED
+                |
+                | Merchant corrects application
+                | and resubmits
+                v
+            SUBMITTED
+```
+
+The `admin` module is responsible for starting reviews, approving applications, and rejecting applications.
+
+A merchant cannot directly set the profile status to `APPROVED` or `UNDER_REVIEW` through the profile update endpoint.
+
+## 7. Review History and Transactions
+
+The service creates `MerchantReviewHistory` entries when a merchant successfully submits or resubmits an application.
+
+Each submission history entry records:
+
+- The profile ID.
+- The previous status.
+- The new status.
+- The actor type (`MERCHANT`).
+- The actor ID.
+
+The profile update and review-history creation occur within one Prisma transaction. This ensures that either both operations commit or both roll back if an operation fails.
+
+The history model is also used by the admin workflow to record review, approval, and rejection transitions.
+
+## 8. Testing with Bruno
+
+Set your Bruno environment variable:
+
+```text
+baseUrl = http://localhost:3000
+```
+
+Adjust the value to match your running API.
+
+### Test 1 — Retrieve Profile
+
+- Method: `GET`
+- URL: `{{baseUrl}}/v1/merchants/profile`
+- Body: None.
+
+Log in as a merchant first and ensure Bruno sends the merchant authentication cookie.
+
+Verify that the correct merchant's profile and documents are returned.
+
+### Test 2 — Update Profile
+
+- Method: `PATCH`
+- URL: `{{baseUrl}}/v1/merchants/profile`
+- Body: JSON.
+
+Example:
+
 ```json
 {
-  "id": "7b8f9e01-1234-4a5b-8c6d-9e0f1a2b3c4d",
-  "accountStatus": "SUBMITTED",
-  "submittedAt": "2026-10-15T01:50:00.000Z",
-  "rejectionReason": null,
-  "...": "all other profile fields"
+  "businessName": "Example Trading",
+  "businessType": "SOLE_TRADER"
 }
 ```
 
-**Errors:**
-| Status | Message | Reason |
-|--------|---------|--------|
-| 400 | Cannot submit from status: UNDER_REVIEW | Already submitted or approved |
-| 400 | Cannot submit. The following required documents are missing or rejected: NATIONAL_ID_FRONT, NATIONAL_ID_BACK | Upload missing documents first |
-| 401 | Unauthorized | JWT missing or expired |
-| 404 | Profile not found | Profile row missing |
+Use a merchant whose profile is in `PENDING_SUBMISSION` or `REJECTED`, and ensure the fields are accepted by `UpdateProfileDto`.
 
----
+Verify that the profile changes are persisted.
 
-## Settlement Account Endpoints
+### Test 3 — Submit Application
 
-### GET /merchants/settlement-accounts
+- Method: `POST`
+- URL: `{{baseUrl}}/v1/merchants/profile/submit`
+- Body: None.
 
-List all payout destinations configured for the merchant.
+Before submitting, ensure that the profile has a business name, a business type, and all required document records for the current submission policy.
 
-**Request:** No body needed.
+Verify that the status changes to `SUBMITTED` and that a corresponding review-history record is created.
 
-**Response 200:**
-```json
-[
-  {
-    "id": "e4a2d810-72cb-469b-98a2-2376189efb31",
-    "profileId": "7b8f9e01-1234-4a5b-8c6d-9e0f1a2b3c4d",
-    "method": "AIRTEL_MONEY",
-    "isPrimary": true,
-    "label": "Primary Airtel Float",
-    "phoneNumber": "+265991234567",
-    "bankName": null,
-    "accountName": null,
-    "accountNumber": null,
-    "branchCode": null,
-    "swiftCode": null,
-    "isVerified": false,
-    "verifiedAt": null,
-    "createdAt": "2026-10-15T01:35:00.000Z",
-    "updatedAt": "2026-10-15T01:35:00.000Z"
-  }
-]
-```
+### Test 4 — Submission with Missing Requirements
 
-**Errors:**
-| Status | Message | Reason |
-|--------|---------|--------|
-| 401 | Unauthorized | JWT missing or expired |
-| 404 | Profile not found | Profile row missing |
+Attempt to submit a profile without a business type, business name, or required document.
 
----
+Verify that the request fails with HTTP 400 Bad Request and that the profile status does not change.
 
-### POST /merchants/settlement-accounts
+### Test 5 — Update After Submission
 
-Add a new payout destination. The `method` field controls which other fields are required.
+Attempt to update a profile whose status is `SUBMITTED` or `UNDER_REVIEW`.
 
-**Important:** Setting `isPrimary: true` automatically demotes all other accounts to non-primary. There can only ever be one primary account.
+Verify that the request fails with HTTP 400 Bad Request.
 
-#### Mobile Money (Airtel Money or TNM Mpamba)
+### Test 6 — Resubmit a Rejected Application
 
-**Request body:**
-```json
-{
-  "method": "AIRTEL_MONEY",
-  "phoneNumber": "+265991234567",
-  "label": "Main Airtel Float",
-  "isPrimary": true
-}
-```
+Use a profile with status `REJECTED`.
 
-Use `"method": "TNM_MPAMBA"` for TNM numbers (`+26588...`).
+1. Update the permitted business details.
+2. Ensure the required document records are valid.
+3. Submit the application again.
+4. Verify that its status becomes `SUBMITTED`, the old rejection reason is cleared, and a new review-history entry is created.
 
-**Field reference:**
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| method | enum | Yes | `AIRTEL_MONEY` or `TNM_MPAMBA` |
-| phoneNumber | string | Yes | Malawian number |
-| label | string | No | Friendly name e.g. "Main Airtel Float" |
-| isPrimary | boolean | No | Demotes all others if true |
+### Test 7 — Unauthenticated Access
 
-#### Bank Transfer
+Call any merchant endpoint without a valid authentication cookie.
 
-**Request body:**
-```json
-{
-  "method": "BANK_TRANSFER",
-  "bankName": "National Bank of Malawi",
-  "accountName": "Lakeview Retailers Ltd",
-  "accountNumber": "1002938475",
-  "branchCode": "001",
-  "label": "Corporate Account",
-  "isPrimary": false
-}
-```
+Verify that the request returns HTTP 401 Unauthorized.
 
-**Field reference:**
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| method | enum | Yes | `BANK_TRANSFER` |
-| bankName | string | Yes | Full bank name |
-| accountName | string | Yes | Name on the account |
-| accountNumber | string | Yes | Account number |
-| branchCode | string | No | Bank branch code |
-| swiftCode | string | No | For future international payouts |
-| label | string | No | Friendly name |
-| isPrimary | boolean | No | Demotes all others if true |
+### Test 8 — Transaction Rollback
 
-**Response 201** — returns the created account object:
-```json
-{
-  "id": "e4a2d810-72cb-469b-98a2-2376189efb31",
-  "profileId": "7b8f9e01-1234-4a5b-8c6d-9e0f1a2b3c4d",
-  "method": "AIRTEL_MONEY",
-  "isPrimary": true,
-  "label": "Main Airtel Float",
-  "phoneNumber": "+265991234567",
-  "bankName": null,
-  "accountName": null,
-  "accountNumber": null,
-  "branchCode": null,
-  "swiftCode": null,
-  "isVerified": false,
-  "verifiedAt": null,
-  "createdAt": "2026-10-15T01:52:00.000Z",
-  "updatedAt": "2026-10-15T01:52:00.000Z"
-}
-```
+Using an integration test with a real test database, deliberately cause the review-history insertion to fail during submission.
 
-**Errors:**
-| Status | Message | Reason |
-|--------|---------|--------|
-| 400 | Mobile money accounts require a phoneNumber | phoneNumber missing for Airtel or TNM |
-| 400 | Bank transfers require bankName, accountName, and accountNumber | Required bank fields missing |
-| 401 | Unauthorized | JWT missing or expired |
-| 404 | Profile not found | Profile row missing |
+Verify that the profile status remains unchanged and that no partial submission is committed.
 
----
+Mock-based unit tests alone cannot prove PostgreSQL transaction rollback behaviour.
 
-### DELETE /merchants/settlement-accounts/:id
+## 9. Current Scope and Limitations
 
-Remove a settlement account by its UUID. You can only delete your own accounts — the backend verifies ownership before deleting.
+The module currently handles profile retrieval, editing, and submission, including validation that excludes superseded documents. It does not yet provide:
 
-**Path parameter:** `id` — UUID of the settlement account.
+- Document upload endpoints.
+- Cloud object-storage integration.
+- File type, size, and content validation.
+- Malware scanning.
+- Merchant-facing document replacement endpoints; supersession is already supported in document records and submission validation.
+- Merchant-facing document status management.
+- Merchant-facing rejection feedback workflows beyond profile retrieval and resubmission.
+- A definitive, compliance-approved Malawi KYC document policy.
 
-**Request:** No body needed.
+These should be implemented or confirmed as the project progresses.
 
-**Response 200:**
-```json
-{
-  "message": "Settlement account removed"
-}
-```
+## 11. Summary
 
-**Errors:**
-| Status | Message | Reason |
-|--------|---------|--------|
-| 401 | Unauthorized | JWT missing or expired |
-| 404 | Settlement account not found | Account does not exist or belongs to another merchant |
-| 404 | Profile not found | Profile row missing |
+The `merchants` module provides the initial business-profile and KYC submission workflow for SmartPay Malawi. It controls when merchants may edit their profiles, checks required document records, and records successful application submissions transactionally.
 
----
-
-## Account Status Reference
-
-| Status | Who Sets It | What It Means |
-|--------|-------------|---------------|
-| `PENDING_SUBMISSION` | System (on registration) | Default state. Merchant is filling in details and uploading documents |
-| `SUBMITTED` | Merchant | Merchant has submitted for review. Profile is in the admin queue |
-| `UNDER_REVIEW` | Admin | An admin has picked up the review and is actively checking documents |
-| `APPROVED` | Admin | KYC passed. Merchant can process live payments |
-| `REJECTED` | Admin | Documents or details failed review. `rejectionReason` explains why. Merchant can fix and resubmit |
-| `SUSPENDED` | Admin | Account suspended after approval due to compliance or fraud concerns |
-
----
-
-## Frontend Routing Guide
-
-After login, call `GET /merchants/profile` and route based on `accountStatus`:
-
-| accountStatus | Where to send the user |
-|---------------|----------------------|
-| `PENDING_SUBMISSION` | `/onboarding` — fill profile, upload documents, add settlement account, then submit |
-| `SUBMITTED` | `/pending` — show "under review" banner, lock editing |
-| `UNDER_REVIEW` | `/pending` — same as above |
-| `APPROVED` | `/dashboard` — full access |
-| `REJECTED` | `/onboarding` — show `rejectionReason` banner, allow edits and resubmission |
-| `SUSPENDED` | `/suspended` — show suspension notice |
+Administrator review and final approval remain separate responsibilities. Submission and admin approval use the shared document policy and exclude superseded documents. Pending current documents may satisfy submission requirements, while approval requires approved current documents.

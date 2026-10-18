@@ -24,10 +24,11 @@
 import { NestFactory } from '@nestjs/core';
 import { Command, Option } from 'commander';
 import bcrypt from 'bcrypt';
-
-import { AppModule } from '../app.module.js';
 import { DatabaseService } from '../database/database.service.js';
 import { AdminRole, AdminStatus } from '../generated/prisma/client.js';
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { DatabaseModule } from '../database/database.module.js';
 
 // ============================================================
 // CLI
@@ -53,9 +54,16 @@ const opts = program.opts<{
     role: AdminRole;
 }>();
 
-// ============================================================
-// PROVISIONING
-// ============================================================
+
+@Module({
+    imports: [
+        ConfigModule.forRoot({
+            isGlobal: true,
+        }),
+        DatabaseModule,
+    ],
+})
+class AdminProvisioningModule {}
 
 async function createAdmin() {
     if (opts.password.length < 12) {
@@ -63,9 +71,12 @@ async function createAdmin() {
     }
 
     // Boot only the application context — no HTTP server needed.
-    const app = await NestFactory.createApplicationContext(AppModule, {
-        logger: ['error', 'warn'], // suppress startup noise
-    });
+    const app = await NestFactory.createApplicationContext(
+    AdminProvisioningModule,
+    {
+        logger: ['error', 'warn'],
+    },
+);
 
     try {
         const db = app.get(DatabaseService);

@@ -1,7 +1,9 @@
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ConflictException,
+  type INestApplication,
+  ValidationPipe,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -12,6 +14,9 @@ import bcrypt from 'bcrypt';
 import { createHmac } from 'node:crypto';
 
 import { AuthService } from './auth.service.js';
+import { AuthController } from './auth.controller.js';
+import { ArcjetGuard } from '../arcjet/arcjet.guard.js';
+import request from 'supertest';
 import { DatabaseService } from '../database/database.service.js';
 import { EmailService } from '../email/email.service.js';
 
@@ -461,4 +466,46 @@ describe('AuthService', () => {
       });
     });
   });
+});
+
+
+describe('AuthController email verification', () => {
+  let app: INestApplication;
+  const authService = { verifyEmail: vi.fn() };
+
+  beforeEach(async () => {
+    const module = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [{ provide: AuthService, useValue: authService }],
+    })
+      .overrideGuard(ArcjetGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+
+    app = module.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app?.close();
+  });
+
+  it.each(['Email verified successfully', 'Email already verified'])(
+    'returns "%s" without changing an existing access_token cookie',
+    async (message) => {
+      authService.verifyEmail.mockResolvedValue({ message });
+      const dto = { email: 'merchant@example.com', code: '123456' };
+
+      const response = await request(app.getHttpServer())
+        .post('/auth/verify-email')
+        .set('Cookie', 'access_token=existing-session')
+        .send(dto)
+        .expect(201);
+
+      expect(response.body).toEqual({ message });
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(authService.verifyEmail).toHaveBeenCalledWith(dto);
+    },
+  );
 });

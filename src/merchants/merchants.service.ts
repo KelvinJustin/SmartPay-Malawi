@@ -9,11 +9,12 @@ import { UpdateProfileDto } from './dto/update-profile.dto.js';
 
 import {
   AccountStatus,
-  BusinessType,
   DocumentStatus,
   DocumentType,
   ProfileActorType,
 } from '../generated/prisma/enums.js';
+
+import { getDocumentRequirements } from './document-requirements.js';
 
 @Injectable()
 export class MerchantsService {
@@ -88,48 +89,6 @@ export class MerchantsService {
   }
 
   // ============================================================
-  // DOCUMENT REQUIREMENTS
-  // ============================================================
-
-  /**
-   * Defines the minimum document types required for each
-   * business category.
-   *
-   * Keep these requirements aligned with the KYC policy.
-   */
-  private readonly requiredDocuments: Record<
-    BusinessType,
-    DocumentType[]
-  > = {
-      [BusinessType.INDIVIDUAL]: [
-        DocumentType.NATIONAL_ID_FRONT,
-        DocumentType.NATIONAL_ID_BACK,
-      ],
-
-      [BusinessType.SOLE_TRADER]: [
-        DocumentType.NATIONAL_ID_FRONT,
-        DocumentType.NATIONAL_ID_BACK,
-        DocumentType.PROOF_OF_ADDRESS,
-      ],
-
-      [BusinessType.PARTNERSHIP]: [
-        DocumentType.BUSINESS_REGISTRATION,
-        DocumentType.DIRECTOR_ID,
-      ],
-
-      [BusinessType.LIMITED_COMPANY]: [
-        DocumentType.BUSINESS_REGISTRATION,
-        DocumentType.TAX_CERTIFICATE,
-        DocumentType.DIRECTOR_ID,
-      ],
-
-      [BusinessType.NGO]: [
-        DocumentType.BUSINESS_REGISTRATION,
-        DocumentType.TAX_CERTIFICATE,
-      ],
-    };
-
-  // ============================================================
   // SUBMISSION
   // ============================================================
 
@@ -192,16 +151,27 @@ export class MerchantsService {
     // their verification can take place during admin review.
     const now = new Date();
 
-    const uploadedTypes = profile.documents
-      .filter(
-        (doc) =>
-          doc.status !== DocumentStatus.REJECTED &&
-          doc.status !== DocumentStatus.EXPIRED &&
-          (!doc.expiresAt || doc.expiresAt > now),
-      )
-      .map((doc) => doc.type);
+    
+const uploadedTypes = profile.documents
+  .filter(
+    (doc) =>
+      // Ignore documents that have been superseded by newer uploads.
+      doc.supersededAt === null &&
+      doc.supersededByDocumentId === null &&
 
-    const required = this.requiredDocuments[profile.businessType];
+      // Ignore rejected or expired documents.
+      doc.status !== DocumentStatus.REJECTED &&
+      doc.status !== DocumentStatus.EXPIRED &&
+
+      // Ignore documents whose expiry date has passed.
+      (!doc.expiresAt || doc.expiresAt > now),
+  )
+  .map((doc) => doc.type);
+
+
+    // Use the shared document policy so submission validation
+// agrees with the policy used by the rest of the application.
+const { required } = getDocumentRequirements(profile.businessType);
 
     const missing = required.filter(
       (type: DocumentType) => !uploadedTypes.includes(type),

@@ -46,6 +46,10 @@ const mockDocuments = [
         type: DocumentType.NATIONAL_ID_FRONT,
         status: DocumentStatus.APPROVED,
         expiresAt: null,
+
+        // This is a current document, not a superseded document.
+        supersededAt: null,
+        supersededByDocumentId: null,
     },
     {
         id: '123e4567-e89b-42d3-a456-426614174011',
@@ -53,6 +57,10 @@ const mockDocuments = [
         type: DocumentType.NATIONAL_ID_BACK,
         status: DocumentStatus.PENDING,
         expiresAt: null,
+
+        // This is a current document, not a superseded document.
+        supersededAt: null,
+        supersededByDocumentId: null,
     },
 ];
 
@@ -83,6 +91,8 @@ const mockDatabaseService = {
         updateMany: vi.fn(),
     },
 
+    // This mock invokes the transaction callback but does not
+    // simulate PostgreSQL rollback behavior.
     $transaction: vi.fn(
         async (
             callback: (tx: typeof mockTransactionClient) => Promise<unknown>,
@@ -100,8 +110,6 @@ describe('MerchantsService', () => {
     beforeEach(async () => {
         vi.resetAllMocks();
 
-        // The mocked transaction runs the callback against our
-        // transaction client. It does NOT simulate real DB rollback.
         mockDatabaseService.$transaction.mockImplementation(
             async (
                 callback: (tx: typeof mockTransactionClient) => Promise<unknown>,
@@ -488,6 +496,27 @@ describe('MerchantsService', () => {
             await expect(service.submitForReview(merchantId)).rejects.toThrow(
                 BadRequestException,
             );
+        });
+
+        it('should reject submission when a superseded document is the only document for a required type', async () => {
+            mockDatabaseService.merchantProfile.findUnique.mockResolvedValue({
+                ...mockProfile,
+                documents: [
+                    {
+                        ...mockDocuments[0],
+                        supersededAt: new Date('2026-02-01T00:00:00.000Z'),
+                        supersededByDocumentId:
+                            '123e4567-e89b-42d3-a456-426614174099',
+                    },
+                    mockDocuments[1],
+                ],
+            });
+
+            await expect(service.submitForReview(merchantId)).rejects.toThrow(
+                BadRequestException,
+            );
+
+            expect(mockDatabaseService.$transaction).not.toHaveBeenCalled();
         });
 
         it('should reject submission when the conditional status update affects no rows', async () => {

@@ -228,32 +228,42 @@ model MerchantProfile {
 // KYC DOCUMENTS
 // ============================================================
 
-// One row per document type per profile — enforced by @@unique.
-// Re-uploading a rejected document upserts the existing row.
+// Multiple documents of the same type can belong to one profile.
+// Each uploaded file has its own ID and review status.
+
 model MerchantDocument {
-  id            String         @id @default(uuid()) @db.Uuid
-  profileId     String         @db.Uuid
-  type          DocumentType
-  status        DocumentStatus @default(PENDING)
-  fileUrl       String
-  fileKey       String // Storage object key used for deletion
-  mimeType      String
+  id           String         @id @default(uuid()) @db.Uuid
+  profileId    String         @db.Uuid
+  type         DocumentType
+  status       DocumentStatus @default(PENDING)
+  fileUrl      String
+  fileKey      String
+  mimeType     String
   fileSizeBytes Int
   rejectionNote String?
-  reviewedAt    DateTime?
-  reviewedById  String?        @db.Uuid
-  expiresAt     DateTime? // For documents with an expiry (e.g. national ID)
-  uploadedAt    DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  reviewedAt   DateTime?
+  reviewedById String?        @db.Uuid
+  expiresAt    DateTime?
+  uploadedAt   DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Set when this document has been replaced by another document.
+  supersededAt           DateTime?
+  supersededByDocumentId String?  @db.Uuid
 
   profile    MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   reviewedBy Admin?          @relation("DocumentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
 
-  @@unique([profileId, type])
+  // Self-relation: this document points to its replacement.
+  supersededBy MerchantDocument?  @relation("DocumentSupersession", fields: [supersededByDocumentId], references: [id], onDelete: SetNull)
+  supersedes   MerchantDocument[] @relation("DocumentSupersession")
+
   @@index([profileId, type])
   @@index([status])
+  @@index([supersededByDocumentId])
   @@map("merchant_documents")
 }
+
 
 // ============================================================
 // REVIEW HISTORY

@@ -34,7 +34,6 @@ describe('AdminService', () => {
   const transactionClient = {
     merchantProfile: {
       findUnique: vi.fn(),
-      update: vi.fn(),
       updateMany: vi.fn(),
     },
     merchantReviewHistory: {
@@ -102,8 +101,29 @@ describe('AdminService', () => {
       expect(databaseService.merchantProfile.findUnique).toHaveBeenCalledWith({
         where: { id: 'profile-123' },
         include: {
-          merchant: true,
-          documents: true,
+          merchant: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+            },
+          },
+          documents: {
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              mimeType: true,
+              fileSizeBytes: true,
+              rejectionNote: true,
+              reviewedAt: true,
+              expiresAt: true,
+              uploadedAt: true,
+              supersededAt: true,
+              supersededByDocumentId: true,
+            },
+          },
           reviewHistory: {
             orderBy: { createdAt: 'desc' },
           },
@@ -474,23 +494,26 @@ describe('AdminService', () => {
         accountStatus: AccountStatus.UNDER_REVIEW,
       });
 
-      transactionClient.merchantProfile.update.mockResolvedValue({
-        id: profileId,
-        accountStatus: AccountStatus.REJECTED,
-        rejectionReason: reason,
+      transactionClient.merchantProfile.updateMany.mockResolvedValue({
+        count: 1,
       });
 
       transactionClient.merchantReviewHistory.create.mockResolvedValue({});
 
       await expect(
-        service.rejectMerchantApplication(profileId, adminId, reason),
-      ).resolves.toMatchObject({
+        service.rejectMerchantApplication(profileId, adminId, `  ${reason}  `),
+      ).resolves.toEqual({
+        profileId,
         accountStatus: AccountStatus.REJECTED,
         rejectionReason: reason,
+        message: 'Merchant application rejected.',
       });
 
-      expect(transactionClient.merchantProfile.update).toHaveBeenCalledWith({
-        where: { id: profileId },
+      expect(transactionClient.merchantProfile.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: profileId,
+          accountStatus: AccountStatus.UNDER_REVIEW,
+        },
         data: {
           accountStatus: AccountStatus.REJECTED,
           rejectionReason: reason,
@@ -509,6 +532,20 @@ describe('AdminService', () => {
           actorId: adminId,
         },
       });
+    });
+
+    it.each([0, 2])('rejects a transition that updates %i rows without recording history', async (count) => {
+      transactionClient.merchantProfile.findUnique.mockResolvedValue({
+        id: profileId,
+        accountStatus: AccountStatus.UNDER_REVIEW,
+      });
+      transactionClient.merchantProfile.updateMany.mockResolvedValue({ count });
+
+      await expect(
+        service.rejectMerchantApplication(profileId, adminId, reason),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(transactionClient.merchantReviewHistory.create).not.toHaveBeenCalled();
     });
 
     it('rejects an empty reason', async () => {
@@ -537,7 +574,7 @@ describe('AdminService', () => {
         service.rejectMerchantApplication(profileId, adminId, reason),
       ).rejects.toThrow(ConflictException);
 
-      expect(transactionClient.merchantProfile.update).not.toHaveBeenCalled();
+      expect(transactionClient.merchantProfile.updateMany).not.toHaveBeenCalled();
       expect(
         transactionClient.merchantReviewHistory.create,
       ).not.toHaveBeenCalled();

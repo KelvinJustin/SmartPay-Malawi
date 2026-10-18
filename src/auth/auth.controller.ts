@@ -113,12 +113,9 @@ export class AuthController {
   @Post('verify-email')
   async verifyEmail(
     @Body() dto: VerifyEmailDto,
-    @Res({ passthrough: true }) response: Response,
   ) {
     // Delegate email verification processing to the authentication service.
     const result = await this.authService.verifyEmail(dto);
-    // Set the cookie options on the response during email verification.
-    response.cookie(COOKIE_NAME, cookieOptions);
     // Return the response message confirming the email verification status.
     return { message: result.message }; // 'Email verified successfully' or 'Email already verified'
   }

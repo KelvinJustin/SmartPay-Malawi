@@ -1,5 +1,7 @@
 
 import { Test, type TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   beforeEach,
   describe,
@@ -18,6 +20,7 @@ describe('AdminController', () => {
   findMerchantApplications: vi.fn(),
   findMerchantApplicationById: vi.fn(),
   startMerchantApplicationReview: vi.fn(),
+  rejectMerchantApplication: vi.fn(),
 };
 
   beforeEach(async () => {
@@ -188,4 +191,37 @@ describe('AdminController', () => {
     expect(response).toEqual(result);
   });
 });
+
+  describe('rejectMerchantApplication', () => {
+    const request = {
+      user: { adminId: 'admin-123', role: 'COMPLIANCE' },
+    } as unknown as Request;
+
+    it.each([undefined, null, 42, true, {}, []])(
+      'returns HTTP 400 for a non-string reason (%j) before calling the service',
+      (reason) => {
+        try {
+          void controller.rejectMerchantApplication('profile-123', request, reason);
+          throw new Error('Expected rejection reason validation to fail');
+        } catch (error) {
+          expect(error).toBeInstanceOf(BadRequestException);
+          expect((error as BadRequestException).getStatus()).toBe(400);
+        }
+        expect(adminService.rejectMerchantApplication).not.toHaveBeenCalled();
+      },
+    );
+
+    it('passes a validated string and the authenticated admin ID to the service', async () => {
+      const result = { profileId: 'profile-123', accountStatus: 'REJECTED' };
+      adminService.rejectMerchantApplication.mockResolvedValue(result);
+
+      await expect(
+        controller.rejectMerchantApplication('profile-123', request, 'Invalid document'),
+      ).resolves.toEqual(result);
+
+      expect(adminService.rejectMerchantApplication).toHaveBeenCalledWith(
+        'profile-123', 'admin-123', 'Invalid document',
+      );
+    });
+  });
 });

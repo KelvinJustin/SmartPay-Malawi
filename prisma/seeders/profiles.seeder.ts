@@ -94,48 +94,42 @@ async function main(): Promise<void> {
     );
 
     for (const type of fixture.documents) {
-      await prisma.merchantDocument.upsert({
+      const existingDocument = await prisma.merchantDocument.findFirst({
         where: {
-          profileId_type: {
-            profileId: profile.id,
-            type,
-          },
-        },
-        update: {
-          status:
-            fixture.status === AccountStatus.REJECTED &&
-              type === DocumentType.NATIONAL_ID_FRONT
-              ? DocumentStatus.REJECTED
-              : DocumentStatus.PENDING,
-          fileUrl: `dev-fixture://${profile.id}/${type}`,
-          fileKey: `dev-fixtures/${profile.id}/${type}`,
-          mimeType: "application/pdf",
-          fileSizeBytes: 1024,
-          rejectionNote:
-            fixture.status === AccountStatus.REJECTED &&
-              type === DocumentType.NATIONAL_ID_FRONT
-              ? "Development fixture: sample document rejected."
-              : null,
-        },
-        create: {
           profileId: profile.id,
           type,
-          status:
-            fixture.status === AccountStatus.REJECTED &&
-              type === DocumentType.NATIONAL_ID_FRONT
-              ? DocumentStatus.REJECTED
-              : DocumentStatus.PENDING,
-          fileUrl: `dev-fixture://${profile.id}/${type}`,
-          fileKey: `dev-fixtures/${profile.id}/${type}`,
-          mimeType: "application/pdf",
-          fileSizeBytes: 1024,
-          rejectionNote:
-            fixture.status === AccountStatus.REJECTED &&
-              type === DocumentType.NATIONAL_ID_FRONT
-              ? "Development fixture: sample document rejected."
-              : null,
+          supersededAt: null,
         },
       });
+
+      const isRejected =
+        fixture.status === AccountStatus.REJECTED &&
+        type === DocumentType.NATIONAL_ID_FRONT;
+      const documentData = {
+        status: isRejected ? DocumentStatus.REJECTED : DocumentStatus.PENDING,
+        fileUrl: `dev-fixture://${profile.id}/${type}`,
+        fileKey: `dev-fixtures/${profile.id}/${type}`,
+        mimeType: "application/pdf",
+        fileSizeBytes: 1024,
+        rejectionNote: isRejected
+          ? "Development fixture: sample document rejected."
+          : null,
+      };
+
+      if (existingDocument) {
+        await prisma.merchantDocument.update({
+          where: { id: existingDocument.id },
+          data: documentData,
+        });
+      } else {
+        await prisma.merchantDocument.create({
+          data: {
+            profileId: profile.id,
+            type,
+            ...documentData,
+          },
+        });
+      }
 
       console.log(`[PROFILE SEED] Document ready: ${type}`);
     }

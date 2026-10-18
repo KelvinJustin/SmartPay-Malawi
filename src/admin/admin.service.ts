@@ -101,8 +101,29 @@ export class AdminService {
           id: profileId,
         },
         include: {
-          merchant: true,
-          documents: true,
+          merchant: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+            },
+          },
+          documents: {
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              mimeType: true,
+              fileSizeBytes: true,
+              rejectionNote: true,
+              reviewedAt: true,
+              expiresAt: true,
+              uploadedAt: true,
+              supersededAt: true,
+              supersededByDocumentId: true,
+            },
+          },
           reviewHistory: {
             orderBy: {
               createdAt: 'desc',
@@ -411,14 +432,23 @@ export class AdminService {
         );
       }
 
-      // Persist the decision and the reason.
-      const rejectedProfile = await tx.merchantProfile.update({
-        where: { id: profileId },
+      // Persist the decision only if the application is still under review.
+      const updated = await tx.merchantProfile.updateMany({
+        where: {
+          id: profileId,
+          accountStatus: AccountStatus.UNDER_REVIEW,
+        },
         data: {
           accountStatus: AccountStatus.REJECTED,
           rejectionReason,
         },
       });
+
+      if (updated.count !== 1) {
+        throw new ConflictException(
+          'The application status changed. Refresh and try again.',
+        );
+      }
 
       // Record who made the decision and the status transition.
       await tx.merchantReviewHistory.create({
@@ -432,7 +462,12 @@ export class AdminService {
         },
       });
 
-      return rejectedProfile;
+      return {
+        profileId,
+        accountStatus: AccountStatus.REJECTED,
+        rejectionReason,
+        message: 'Merchant application rejected.',
+      };
     });
   }
 

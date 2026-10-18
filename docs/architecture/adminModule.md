@@ -57,7 +57,7 @@ Admin authentication is separate from merchant authentication.
 
 ## 3. Endpoint Reference
 
-Base route: `/admin`
+Base route: `/v1/admin`
 
 All five endpoints require an authenticated admin session and the appropriate role.
 
@@ -65,7 +65,7 @@ All five endpoints require an authenticated admin session and the appropriate ro
 
 **Endpoint**
 
-`GET /admin/merchant-applications`
+`GET /v1/admin/merchant-applications`
 
 **Purpose**
 
@@ -85,7 +85,7 @@ Retrieves a paginated list of merchant applications awaiting review or already u
 **Example request**
 
 ```http
-GET /admin/merchant-applications?page=1&limit=20
+GET /v1/admin/merchant-applications?page=1&limit=20
 ```
 
 **Business logic**
@@ -142,7 +142,7 @@ The values above are illustrative.
 
 **Endpoint**
 
-`GET /admin/merchant-applications/:profileId`
+`GET /v1/admin/merchant-applications/:profileId`
 
 **Purpose**
 
@@ -161,7 +161,7 @@ Retrieves the details of a specific merchant application.
 **Example request**
 
 ```http
-GET /admin/merchant-applications/profile-uuid
+GET /v1/admin/merchant-applications/profile-uuid
 ```
 
 **Business logic**
@@ -180,13 +180,13 @@ If the profile does not exist, the service throws `NotFoundException`.
 - `403 Forbidden` — insufficient admin role.
 - `404 Not Found` — merchant application does not exist.
 
-**Implementation note:** The current service includes the full merchant and document relations. Before production, review the returned fields to ensure password hashes, sensitive document metadata, or other unnecessary information are not exposed to the admin client.
+Merchant information is limited to ID, name, email, and phone. Document records include review status, file format and size, timestamps, rejection notes, and supersession details. Merchant credentials and document storage URLs and keys are excluded.
 
 ### 3.3 Start merchant application review
 
 **Endpoint**
 
-`POST /admin/merchant-applications/:profileId/start-review`
+`POST /v1/admin/merchant-applications/:profileId/start-review`
 
 **Purpose**
 
@@ -203,7 +203,7 @@ None.
 **Example request**
 
 ```http
-POST /admin/merchant-applications/profile-uuid/start-review
+POST /v1/admin/merchant-applications/profile-uuid/start-review
 ```
 
 **Permitted transition**
@@ -244,7 +244,7 @@ If the update or audit-history insertion fails, the transaction should roll back
 
 **Endpoint**
 
-`POST /admin/merchant-applications/:profileId/approve`
+`POST /v1/admin/merchant-applications/:profileId/approve`
 
 **Purpose**
 
@@ -261,7 +261,7 @@ None.
 **Example request**
 
 ```http
-POST /admin/merchant-applications/profile-uuid/approve
+POST /v1/admin/merchant-applications/profile-uuid/approve
 ```
 
 **Permitted transition**
@@ -307,7 +307,7 @@ Superseded documents remain in the database for historical purposes but are excl
 
 **Endpoint**
 
-`POST /admin/merchant-applications/:profileId/reject`
+`POST /v1/admin/merchant-applications/:profileId/reject`
 
 **Purpose**
 
@@ -325,12 +325,12 @@ Rejects an application under review and records the reason for the decision.
 }
 ```
 
-The reason must not be empty or contain only whitespace.
+The reason must be a string and must not be empty or contain only whitespace.
 
 **Example request**
 
 ```http
-POST /admin/merchant-applications/profile-uuid/reject
+POST /v1/admin/merchant-applications/profile-uuid/reject
 Content-Type: application/json
 ```
 
@@ -346,24 +346,31 @@ The service:
 2. Starts a database transaction.
 3. Checks whether the application exists.
 4. Confirms that the application is currently `UNDER_REVIEW`.
-5. Updates the profile status to `REJECTED`.
+5. Conditionally updates the profile status from `UNDER_REVIEW` to `REJECTED`, rejecting concurrent status changes.
 6. Stores the rejection reason on the merchant profile.
 7. Creates a review-history entry containing the previous status, new status, reason, and admin identity.
 8. Commits the changes together.
 
 **Success response**
 
-The current implementation returns the updated merchant profile from Prisma. Its exact response shape is therefore the profile record returned by the database update.
+```json
+{
+  "profileId": "profile-uuid",
+  "accountStatus": "REJECTED",
+  "rejectionReason": "Business registration document is invalid.",
+  "message": "Merchant application rejected."
+}
+```
 
 **Possible errors**
 
-- `400 Bad Request` — rejection reason is empty or whitespace-only.
+- `400 Bad Request` — rejection reason is missing, null, not a string, empty, or whitespace-only.
 - `401 Unauthorized` — missing or invalid admin authentication.
 - `403 Forbidden` — insufficient admin role.
 - `404 Not Found` — application does not exist.
-- `409 Conflict` — application is not currently under review.
+- `409 Conflict` — application is not currently under review or its status changes concurrently.
 
-**Implementation note:** The controller currently reads the reason using `@Body('reason')`. A request DTO with validation would provide stronger request-shape validation and clearer API documentation.
+The controller validates the reason's type before calling the service, which trims it and rejects empty or whitespace-only reasons.
 
 ---
 
@@ -554,11 +561,11 @@ Passing unit tests and a successful build provide confidence in the implementati
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/admin/merchant-applications` | List and paginate submitted and in-review applications. |
-| `GET` | `/admin/merchant-applications/:profileId` | Retrieve application details, documents, and review history. |
-| `POST` | `/admin/merchant-applications/:profileId/start-review` | Move a submitted application into review. |
-| `POST` | `/admin/merchant-applications/:profileId/approve` | Validate documents and approve an application. |
-| `POST` | `/admin/merchant-applications/:profileId/reject` | Reject an application and record the reason. |
+| `GET` | `/v1/admin/merchant-applications` | List and paginate submitted and in-review applications. |
+| `GET` | `/v1/admin/merchant-applications/:profileId` | Retrieve application details, documents, and review history. |
+| `POST` | `/v1/admin/merchant-applications/:profileId/start-review` | Move a submitted application into review. |
+| `POST` | `/v1/admin/merchant-applications/:profileId/approve` | Validate documents and approve an application. |
+| `POST` | `/v1/admin/merchant-applications/:profileId/reject` | Reject an application and record the reason. |
 
 All endpoints are protected by admin authentication and role guards. Application review actions are restricted to `SUPER_ADMIN` and `COMPLIANCE` under the current controller configuration.
 

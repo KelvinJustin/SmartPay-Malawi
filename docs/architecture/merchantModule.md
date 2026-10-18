@@ -182,13 +182,7 @@ The document policy helper in `document-requirements.ts` defines required and op
 
 The `getDocumentRequirements()` helper returns copies of the required and optional arrays to prevent callers from accidentally modifying the underlying policy.
 
-**Policy consistency warning:** the current `MerchantsService` contains a separate `requiredDocuments` mapping used by submission validation. It does not match the policy helper in every case:
-
-- Sole traders: submission validation requires proof of address, although the helper marks it optional.
-- Partnerships: submission validation requires business registration and director ID, but omits the two national ID documents required by the helper.
-- NGOs: submission validation requires a tax certificate but omits the director ID required by the helper.
-
-These discrepancies should be resolved by making submission validation use `getDocumentRequirements()` as the single source of truth.
+Submission validation uses `getDocumentRequirements()` as the shared source of required document types, consistent with admin approval.
 
 These are initial development rules, not definitive legal requirements for Malawi. Confirm the final policy with the relevant compliance and legal stakeholders before production use.
 
@@ -196,13 +190,14 @@ These are initial development rules, not definitive legal requirements for Malaw
 
 The current submission implementation considers a document eligible for satisfying a required type when:
 
+- Both `supersededAt` and `supersededByDocumentId` are null.
 - Its status is not `REJECTED`.
 - Its status is not `EXPIRED`.
 - It has no expiry date, or its expiry date is in the future.
 
 This means a document with status `PENDING` can satisfy the submission-stage check.
 
-The current service does not exclude superseded documents from this check. If document supersession is used in the application, submission validation should be updated to consider only current documents, consistent with the approval logic in the admin module.
+Superseded documents are excluded from submission validation, consistent with admin approval. They remain in the database for history and do not satisfy required document types.
 
 The service validates document records; it does not prove that a real file exists, is authentic, or has been securely stored.
 
@@ -336,13 +331,13 @@ Mock-based unit tests alone cannot prove PostgreSQL transaction rollback behavio
 
 ## 9. Current Scope and Limitations
 
-The module currently handles profile retrieval, editing, and submission. It does not yet provide:
+The module currently handles profile retrieval, editing, and submission, including validation that excludes superseded documents. It does not yet provide:
 
 - Document upload endpoints.
 - Cloud object-storage integration.
 - File type, size, and content validation.
 - Malware scanning.
-- Document replacement or supersession workflows.
+- Merchant-facing document replacement endpoints; supersession is already supported in document records and submission validation.
 - Merchant-facing document status management.
 - Merchant-facing rejection feedback workflows beyond profile retrieval and resubmission.
 - A definitive, compliance-approved Malawi KYC document policy.
@@ -353,4 +348,4 @@ These should be implemented or confirmed as the project progresses.
 
 The `merchants` module provides the initial business-profile and KYC submission workflow for SmartPay Malawi. It controls when merchants may edit their profiles, checks required document records, and records successful application submissions transactionally.
 
-Administrator review and final approval remain separate responsibilities. Before extending the workflow, consolidate the document requirements and ensure that submission validation consistently applies the same rules as the shared document policy and admin approval process.
+Administrator review and final approval remain separate responsibilities. Submission and admin approval use the shared document policy and exclude superseded documents. Pending current documents may satisfy submission requirements, while approval requires approved current documents.

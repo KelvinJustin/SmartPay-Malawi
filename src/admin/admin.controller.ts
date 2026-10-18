@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -98,8 +99,12 @@ export class AdminController {
   rejectMerchantApplication(
     @Param('profileId') profileId: string,
     @Req() request: Request,
-    @Body('reason') reason: string,
+    @Body('reason') reason: unknown,
   ) {
+    if (typeof reason !== 'string') {
+      throw new BadRequestException('A rejection reason must be a string.');
+    }
+
     // Extract the authenticated admin identity from the request context.
     const admin = request.user as {
       adminId: string;

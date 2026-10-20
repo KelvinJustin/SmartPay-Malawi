@@ -224,7 +224,7 @@ The frontend is not currently part of the NestJS backend build. It will be devel
 The current repository is organized into NestJS modules, Prisma schema and migrations, automated tests, and technical documentation.
 
 ```text
-smart-pay-malawi/
+Solaris-malawi/
 ├── src/
 │   ├── admin/
 │   │   ├── admin.controller.ts

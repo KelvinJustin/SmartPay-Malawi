@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: smartpay-api
+    container_name: Solaris-api
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -22,7 +22,7 @@ services:
 
   redis:
     image: redis:8-alpine
-    container_name: smartpay-redis
+    container_name: Solaris-redis
     restart: unless-stopped
     # Publish Redis to the host so the API can also be run outside Docker
     # (npm run start:dev) and still reach it on localhost:6379.

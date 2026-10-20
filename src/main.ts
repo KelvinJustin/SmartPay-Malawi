@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { json } from 'express';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
@@ -6,9 +7,18 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+    bodyParser: false,
+  });
 
-  // Parse incoming cookies so Passport can read the JWT cookie.
+  app.use(
+    json({
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
   app.use(cookieParser());
 
   app.useGlobalPipes(

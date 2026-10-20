@@ -1,16 +1,16 @@
 # Database Setup & Prisma 7 Guide
 
-> **Project:** SmartPay Malawi  
+> **Project:** Solaris Malawi  
 > **Status:** Active  
 > **Last Updated:** October 2026  
 
-This guide provides a comprehensive walkthrough for setting up, configuring, migrating, and querying the database in the SmartPay Malawi project using **PostgreSQL** and **Prisma ORM 7**.
+This guide provides a comprehensive walkthrough for setting up, configuring, migrating, and querying the database in the Solaris Malawi project using **PostgreSQL** and **Prisma ORM 7**.
 
 ---
 
 ## 1. Overview & Architecture
 
-SmartPay Malawi uses:
+Solaris Malawi uses:
 * **Database Engine:** PostgreSQL (hosted remotely on Neon for development and staging).
 * **ORM:** Prisma ORM 7 (`prisma-client` generator, ESM-first).
 * **Driver Adapter:** `@prisma/adapter-pg` (Prisma 7 requirement for PostgreSQL).

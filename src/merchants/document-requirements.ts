@@ -15,7 +15,7 @@ export interface DocumentRequirements {
 }
 
 /**
- Initial SmartPay document policy.
+ Initial Solaris document policy.
  
   These are development defaults, not a definitive statement
 */

@@ -70,7 +70,7 @@ export class EmailService implements OnModuleInit {
     // Generic email method shared by the verification and login email workflows.
     async sendEmail(to: string, subject: string, text: string) {
         return this.transporter.sendMail({
-            // Sender address configured for the SmartPay email account.
+            // Sender address configured for the Solaris email account.
             from: this.configService.getOrThrow<string>('SMTP_FROM'),
             to,
             subject,
@@ -82,8 +82,8 @@ export class EmailService implements OnModuleInit {
     async sendVerificationCode(to: string, code: string) {
         return this.sendEmail(
             to,
-            'Verify your SmartPay email',
-            `Your SmartPay verification code is ${code}.
+            'Verify your Solaris email',
+            `Your Solaris verification code is ${code}.
 
 This code expires in 10 minutes.
 
@@ -95,8 +95,8 @@ If you did not request this code, you can ignore this email.`,
     async sendLoginCode(to: string, code: string) {
         return this.sendEmail(
             to,
-            'Your SmartPay login verification code',
-            `Your SmartPay login code is ${code}.
+            'Your Solaris login verification code',
+            `Your Solaris login code is ${code}.
 
 This code expires in 10 minutes.
 If you did not attempt to log in, secure your account.`,

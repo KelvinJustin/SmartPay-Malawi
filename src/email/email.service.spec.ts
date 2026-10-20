@@ -22,7 +22,7 @@ describe('EmailService', () => {
   const configValues: Record<string, string> = {
     SMTP_SERVER: '127.0.0.1',
     SMTP_PORT: '1025',
-    SMTP_FROM: 'SmartPay Malawi <no-reply@smartpay.local>',
+    SMTP_FROM: 'Solaris Malawi <no-reply@solaris.local>',
     NODE_ENV: 'development',
   };
 
@@ -90,10 +90,14 @@ describe('EmailService', () => {
     await service.sendVerificationCode('jane@example.com', '123456');
 
     expect(mockTransporter.sendMail).toHaveBeenCalledWith({
-      from: 'SmartPay Malawi <no-reply@smartpay.local>',
+      from: 'Solaris Malawi <no-reply@solaris.local>',
       to: 'jane@example.com',
-      subject: 'Verify your SmartPay email',
-      text: expect.stringContaining('123456'),
+      subject: 'Verify your Solaris email',
+      text: `Your Solaris verification code is 123456.
+
+This code expires in 10 minutes.
+
+If you did not request this code, you can ignore this email.`,
     });
   });
 
@@ -105,10 +109,13 @@ describe('EmailService', () => {
     await service.sendLoginCode('jane@example.com', '654321');
 
     expect(mockTransporter.sendMail).toHaveBeenCalledWith({
-      from: 'SmartPay Malawi <no-reply@smartpay.local>',
+      from: 'Solaris Malawi <no-reply@solaris.local>',
       to: 'jane@example.com',
-      subject: 'Your SmartPay login verification code',
-      text: expect.stringContaining('654321'),
+      subject: 'Your Solaris login verification code',
+      text: `Your Solaris login code is 654321.
+
+This code expires in 10 minutes.
+If you did not attempt to log in, secure your account.`,
     });
   });
 

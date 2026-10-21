@@ -14,7 +14,7 @@ import {
 
 const fixtures = [
   {
-    email: "seed.soletrader@smartpay.local",
+    email: "seed.soletrader@solaris.local",
     businessName: "Development Sole Trader",
     businessType: BusinessType.SOLE_TRADER,
     status: AccountStatus.SUBMITTED,
@@ -25,7 +25,7 @@ const fixtures = [
     ],
   },
   {
-    email: "seed.company@smartpay.local",
+    email: "seed.company@solaris.local",
     businessName: "Development Limited Company",
     businessType: BusinessType.LIMITED_COMPANY,
     status: AccountStatus.UNDER_REVIEW,
@@ -36,7 +36,7 @@ const fixtures = [
     ],
   },
   {
-    email: "seed.pending@smartpay.local",
+    email: "seed.pending@solaris.local",
     businessName: "Development Pending Merchant",
     businessType: BusinessType.SOLE_TRADER,
     status: AccountStatus.REJECTED,
@@ -45,6 +45,13 @@ const fixtures = [
       DocumentType.NATIONAL_ID_BACK,
       DocumentType.PROOF_OF_ADDRESS,
     ],
+  },
+  {
+    email: "seed.approved@solaris.local",
+    businessName: "Development Approved Merchant",
+    businessType: BusinessType.SOLE_TRADER,
+    status: AccountStatus.APPROVED,
+    documents: [],
   },
 ];
 

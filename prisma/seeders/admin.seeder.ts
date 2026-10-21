@@ -13,7 +13,7 @@ import {
 
 const fixture = {
   name: "Development Compliance Admin",
-  email: "seed.admin@smartpay.local",
+  email: "seed.admin@solaris.local",
   password: "DevAdminPassword123!",
   role: AdminRole.COMPLIANCE,
 };

@@ -1,4 +1,4 @@
-# SmartPay Malawi — Admin Module
+# Solaris Malawi — Admin Module
 
 ## 1. Overview
 

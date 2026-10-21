@@ -9,6 +9,9 @@ import { EmailModule } from './email/email.module.js';
 import { ArcjetModule } from './arcjet/arcjet.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { AdminAuthModule } from './admin-auth/admin-auth.module.js';
+import { TransactionsModule } from './transactions/transactions.module.js';
+import { PaymentProvidersModule } from './payment-providers/payment-providers.module.js';
+import { ProviderCallbacksModule } from './provider-callbacks/provider-callbacks.module.js';
 
 @Module({
   imports: [
@@ -20,6 +23,9 @@ import { AdminAuthModule } from './admin-auth/admin-auth.module.js';
     AdminAuthModule,
     MerchantsModule,
     AdminModule,
+    TransactionsModule,
+    PaymentProvidersModule,
+    ProviderCallbacksModule,
   ],
   controllers: [AppController],
   providers: [AppService],

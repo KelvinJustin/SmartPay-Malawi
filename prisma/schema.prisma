@@ -1,3 +1,7 @@
+// ==========================================
+// GENERATOR & DATASOURCE CONFIGURATION
+// ==========================================
+
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -7,16 +11,17 @@ datasource db {
   provider = "postgresql"
 }
 
-// ============================================================
-// ENUMS
-// ============================================================
+// ==========================================
+// ENUMERATIONS
+// ==========================================
 
+// Defines the intended use case for a generated One-Time Password (OTP).
 enum OtpPurpose {
   EMAIL_VERIFICATION
   LOGIN
 }
 
-// KYC/onboarding lifecycle — lives on MerchantProfile, not Merchant.
+// Tracks the lifecycle and compliance approval stage of a merchant account.
 enum AccountStatus {
   PENDING_SUBMISSION
   SUBMITTED
@@ -26,12 +31,14 @@ enum AccountStatus {
   SUSPENDED
 }
 
+// Identifies the actor responsible for changing a merchant profile or review state.
 enum ProfileActorType {
   MERCHANT
   ADMIN
   SYSTEM
 }
 
+// Classifies the legal structure of a merchant business entity.
 enum BusinessType {
   INDIVIDUAL
   SOLE_TRADER
@@ -40,6 +47,7 @@ enum BusinessType {
   NGO
 }
 
+// Categorizes KYC / compliance documents uploaded by merchants.
 enum DocumentType {
   NATIONAL_ID_FRONT
   NATIONAL_ID_BACK
@@ -49,6 +57,7 @@ enum DocumentType {
   DIRECTOR_ID
 }
 
+// Tracks the verification status of an uploaded compliance document.
 enum DocumentStatus {
   PENDING
   APPROVED
@@ -56,6 +65,7 @@ enum DocumentStatus {
   EXPIRED
 }
 
+// Defines administrative roles and permission tiers within the platform.
 enum AdminRole {
   SUPER_ADMIN
   COMPLIANCE
@@ -63,17 +73,50 @@ enum AdminRole {
   SUPPORT
 }
 
+// Tracks whether an admin account is active or suspended.
 enum AdminStatus {
   ACTIVE
   SUSPENDED
 }
 
-// ============================================================
-// MERCHANT
-// ============================================================
+// Tracks the overall financial status of a payment transaction.
+enum PaymentStatus {
+  CREATED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  PENDING_RECONCILIATION
+}
 
-// Auth identity only — no business details, KYC, or balances.
-// Those live on MerchantProfile and MerchantLedger respectively.
+// Tracks the lifecycle state of a hosted checkout session URL.
+enum CheckoutSessionStatus {
+  ACTIVE
+  EXPIRED
+  CONSUMED
+  REVOKED
+}
+
+// Supported mobile money and payment network providers in Malawi.
+enum PaymentProvider {
+  AIRTEL_MONEY
+  TN_MPAMBA    @map("TNM_MPAMBA")
+  TEST
+}
+
+// Tracks the granular status of an individual payment gateway attempt.
+enum PaymentAttemptStatus {
+  STARTED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  UNKNOWN
+}
+
+// ==========================================
+// CORE DOMAIN MODELS
+// ==========================================
+
+// Auth identity only. Business details → MerchantProfile, balances → MerchantLedger.
 model Merchant {
   id              String    @id @default(uuid()) @db.Uuid
   name            String
@@ -86,20 +129,75 @@ model Merchant {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  otpChallenges OtpChallenge[]
-  revokedTokens RevokedToken[]
-  profile       MerchantProfile?
-  ledger        MerchantLedger?
+  otpChallenges       OtpChallenge[]
+  revokedTokens       RevokedToken[]
+  profile             MerchantProfile?
+  ledger              MerchantLedger?
+  paymentTransactions PaymentTransaction[]
 
   @@map("merchants")
 }
 
-// ============================================================
-// ADMIN
-// ============================================================
+// Amounts are stored in integer tambala (1 MWK = 100 tambala).
+// A succeeded payment does not automatically settle to the ledger.
+model PaymentTransaction {
+  id                String           @id @default(uuid()) @db.Uuid
+  publicReference   String           @unique // Solaris-generated; never expose the DB id externally.
+  merchantId        String           @db.Uuid
+  // Amount stored in the smallest MWK unit: 100 tambala = MWK 1.00.
+  amountTambala     Int              @map("amount")
+  currency          String           @default("MWK")
+  status            PaymentStatus    @default(CREATED)
+  provider          PaymentProvider? // Null until a provider is selected.
+  providerReference String?
+  customerPhone     String?
+  description       String?
+  merchantReference String?
+  idempotencyKey    String // Deduplicates retried requests; scoped per merchant.
 
-// Privileged platform identity — separate from merchants.
-// Admin accounts must be provisioned internally; no public registration.
+  // Sanitised diagnostics only — never store credentials or tokens here.
+  failureCode    String?
+  failureMessage String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  processedAt DateTime?
+
+  merchant         Merchant          @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  attempts         PaymentAttempt[]
+  checkoutSessions CheckoutSession[]
+
+  @@unique([merchantId, idempotencyKey])
+  @@unique([provider, providerReference])
+  @@index([merchantId, createdAt])
+  @@index([status, createdAt])
+  @@index([merchantId, merchantReference])
+  @@map("payment_transactions")
+}
+
+// One row per provider call. Attempts are never overwritten so the full
+// call history is preserved even when a transaction is retried.
+model PaymentAttempt {
+  id                String               @id @default(uuid()) @db.Uuid
+  transactionId     String               @db.Uuid
+  attemptNumber     Int
+  provider          PaymentProvider
+  status            PaymentAttemptStatus @default(STARTED)
+  providerReference String?
+  failureCode       String?
+  failureMessage    String?
+  startedAt         DateTime             @default(now())
+  completedAt       DateTime?
+
+  transaction PaymentTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@unique([transactionId, attemptNumber])
+  @@index([provider, providerReference])
+  @@index([status, startedAt])
+  @@map("payment_attempts")
+}
+
+// Privileged platform identity. Provisioned internally — no public registration.
 model Admin {
   id           String      @id @default(uuid()) @db.Uuid
   name         String
@@ -120,10 +218,7 @@ model Admin {
   @@map("admins")
 }
 
-// ============================================================
-// OTP
-// ============================================================
-
+// Manages short-lived verification and authentication OTP challenges for merchants.
 model OtpChallenge {
   id         String     @id @default(uuid()) @db.Uuid
   merchantId String     @db.Uuid
@@ -142,10 +237,7 @@ model OtpChallenge {
   @@map("otp_challenges")
 }
 
-// ============================================================
-// TOKEN REVOCATION
-// ============================================================
-
+// Blacklist store for revoked merchant JWT refresh/access tokens (identified by jti).
 model RevokedToken {
   id         String   @id @default(uuid()) @db.Uuid
   jti        String   @unique @db.Uuid
@@ -159,7 +251,7 @@ model RevokedToken {
   @@map("revoked_tokens")
 }
 
-// Admin sessions are revoked independently of merchant sessions.
+// Separate table so admin token revocations are isolated from merchant ones.
 model AdminRevokedToken {
   id        String   @id @default(uuid()) @db.Uuid
   jti       String   @unique @db.Uuid
@@ -174,17 +266,12 @@ model AdminRevokedToken {
   @@map("admin_revoked_tokens")
 }
 
-// ============================================================
-// MERCHANT PROFILE
-// ============================================================
-
-// Business identity and KYC. Created automatically at registration
-// but starts empty — the merchant fills it in before submitting for approval.
+// Created automatically on registration but starts empty.
+// Only admins may advance accountStatus past SUBMITTED.
 model MerchantProfile {
   id         String @id @default(uuid()) @db.Uuid
   merchantId String @unique @db.Uuid
 
-  // Business identity
   businessName           String?
   tradingName            String?
   businessType           BusinessType?
@@ -193,7 +280,6 @@ model MerchantProfile {
   merchantCategoryCode   String? // ISO 18245 MCC e.g. "5411"
   industryDescription    String?
 
-  // Contact and location
   supportEmail String?
   supportPhone String?
   websiteUrl   String?
@@ -203,10 +289,8 @@ model MerchantProfile {
   district     String?
   country      String  @default("MW")
 
-  // Branding
   logoUrl String?
 
-  // KYC lifecycle — only admins may transition status past SUBMITTED.
   accountStatus   AccountStatus @default(PENDING_SUBMISSION)
   rejectionReason String?
   submittedAt     DateTime?
@@ -224,37 +308,30 @@ model MerchantProfile {
   @@map("merchant_profiles")
 }
 
-// ============================================================
-// KYC DOCUMENTS
-// ============================================================
-
-// Multiple documents of the same type can belong to one profile.
-// Each uploaded file has its own ID and review status.
-
+// Each uploaded file is its own row. Multiple documents of the same type
+// are allowed; use supersededByDocumentId to track which is current.
 model MerchantDocument {
-  id           String         @id @default(uuid()) @db.Uuid
-  profileId    String         @db.Uuid
-  type         DocumentType
-  status       DocumentStatus @default(PENDING)
-  fileUrl      String
-  fileKey      String
-  mimeType     String
+  id            String         @id @default(uuid()) @db.Uuid
+  profileId     String         @db.Uuid
+  type          DocumentType
+  status        DocumentStatus @default(PENDING)
+  fileUrl       String
+  fileKey       String
+  mimeType      String
   fileSizeBytes Int
   rejectionNote String?
-  reviewedAt   DateTime?
-  reviewedById String?        @db.Uuid
-  expiresAt    DateTime?
-  uploadedAt   DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  reviewedAt    DateTime?
+  reviewedById  String?        @db.Uuid
+  expiresAt     DateTime?
+  uploadedAt    DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
-  // Set when this document has been replaced by another document.
   supersededAt           DateTime?
-  supersededByDocumentId String?  @db.Uuid
+  supersededByDocumentId String?   @db.Uuid
 
   profile    MerchantProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   reviewedBy Admin?          @relation("DocumentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
 
-  // Self-relation: this document points to its replacement.
   supersededBy MerchantDocument?  @relation("DocumentSupersession", fields: [supersededByDocumentId], references: [id], onDelete: SetNull)
   supersedes   MerchantDocument[] @relation("DocumentSupersession")
 
@@ -264,13 +341,7 @@ model MerchantDocument {
   @@map("merchant_documents")
 }
 
-
-// ============================================================
-// REVIEW HISTORY
-// ============================================================
-
-// Append-only audit trail of every profile status change.
-// Rows are never updated or deleted.
+// Append-only audit log of every accountStatus transition. Never mutate rows.
 model MerchantReviewHistory {
   id         String           @id @default(uuid()) @db.Uuid
   profileId  String           @db.Uuid
@@ -288,17 +359,13 @@ model MerchantReviewHistory {
   @@map("merchant_review_history")
 }
 
-// ============================================================
-// MERCHANT LEDGER
-// ============================================================
-
-// One ledger per merchant. Balances are stored as integer tambala
-// (1 MWK = 100 tambala) to avoid floating-point precision issues.
+// Balances in integer tambala (1 MWK = 100 tambala).
+// availableBalance = settled funds; pendingBalance = not yet settled.
 model MerchantLedger {
   id               String   @id @default(uuid()) @db.Uuid
   merchantId       String   @unique @db.Uuid
-  availableBalance Int      @default(0) // Settled funds available to withdraw
-  pendingBalance   Int      @default(0) // Funds not yet settled
+  availableBalance Int      @default(0)
+  pendingBalance   Int      @default(0)
   currency         String   @default("MWK")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -306,4 +373,25 @@ model MerchantLedger {
   merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 
   @@map("merchant_ledgers")
+}
+
+// Stores encrypted payment checkout session tokens and tracks their lifecycle.
+model CheckoutSession {
+  id             String                @id @default(uuid()) @db.Uuid
+  transactionId  String                @db.Uuid
+  tokenHash      String                @unique
+  tokenEncrypted String
+  status         CheckoutSessionStatus @default(ACTIVE)
+
+  expiresAt  DateTime
+  consumedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  transaction PaymentTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId, status])
+  @@index([status, expiresAt])
+  @@map("checkout_sessions")
 }

@@ -3,7 +3,7 @@
 > **Status:** Draft
 > **Last Updated:** October 2026
 
-This document explains how to set up the SmartPay Malawi development environment locally.
+This document explains how to set up the Solaris Malawi development environment locally.
 
 ## 1. Development Stack
 
@@ -22,7 +22,7 @@ The current development environment consists of:
 | Containers              | Docker          |
 | Container Orchestration | Docker Compose  |
 
-PostgreSQL is hosted through **Neon** during development. The local Docker environment runs the SmartPay API and Redis.
+PostgreSQL is hosted through **Neon** during development. The local Docker environment runs the Solaris API and Redis.
 
 ---
 
@@ -55,8 +55,8 @@ The exact Docker installation may differ between operating systems. Docker Deskt
 Clone the repository:
 
 ```bash
-git clone https://github.com/KelvinJustin/SmartPay-Malawi.git
-cd SmartPay-Malawi
+git clone https://github.com/KelvinJustin/Solaris-Malawi.git
+cd Solaris-Malawi
 ```
 
 ---
@@ -108,12 +108,12 @@ PORT="3000"
 
 ## 6. Database
 
-SmartPay currently uses a shared **Neon PostgreSQL development database**.
+Solaris currently uses a shared **Neon PostgreSQL development database**.
 
 The database is not included in Docker Compose.
 
 ```text
-SmartPay API
+Solaris API
      │
      ▼
    Prisma
@@ -175,7 +175,7 @@ The development architecture is:
                  Neon PostgreSQL
                        ▲
                        │
-                 SmartPay API
+                 Solaris API
                        │
                        ▼
                 Redis Container
@@ -473,7 +473,7 @@ Redis should report that it is ready to accept connections.
 │  │           Docker Compose              │  │
 │  │                                       │  │
 │  │  ┌─────────────┐    ┌─────────────┐  │  │
-│  │  │ SmartPay API│    │    Redis    │  │  │
+│  │  │ Solaris API│    │    Redis    │  │  │
 │  │  │   NestJS    │◄──►│             │  │  │
 │  │  └──────┬──────┘    └─────────────┘  │  │
 │  └─────────┼─────────────────────────────┘  │

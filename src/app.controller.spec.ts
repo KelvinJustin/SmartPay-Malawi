@@ -17,9 +17,9 @@ describe('AppController', () => {
     });
 
     describe('getTest', () => {
-        it('should return the SmartPay API status message', () => {
+        it('should return the solaris API status message', () => {
             expect(appController.getTest()).toBe(
-                'message: SmartPay API is working',
+                'message: solaris API is working',
             );
         });
     });

@@ -1,4 +1,4 @@
-# SmartPay Malawi — Authentication API Contract
+# Solaris Malawi — Authentication API Contract
 
 **Document:** Authentication API Contract
 **Backend:** NestJS REST API
@@ -10,7 +10,7 @@
 
 ## 1. Authentication Overview
 
-SmartPay uses a **two-step MFA flow** followed by cookie-based JWT authentication.
+Solaris uses a **two-step MFA flow** followed by cookie-based JWT authentication.
 
 - **Step 1** (`POST /auth/login`): validates email/password and emails a one-time 6-digit code.
 - **Step 2** (`POST /auth/verify-login`): validates the OTP and issues the `access_token` HTTP-only cookie.

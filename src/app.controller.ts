@@ -7,6 +7,6 @@ export class AppController {
 
   @Get("test")
   getTest(): string {
-    return "message: SmartPay API is working";
+    return "message: solaris API is working";
   }
 }

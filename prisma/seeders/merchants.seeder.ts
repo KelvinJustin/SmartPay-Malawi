@@ -9,18 +9,23 @@ import {
 const fixtures = [
   {
     name: "Development Sole Trader",
-    email: "seed.soletrader@smartpay.local",
+    email: "seed.soletrader@solaris.local",
     phone: "+265991000101",
   },
   {
     name: "Development Limited Company",
-    email: "seed.company@smartpay.local",
+    email: "seed.company@solaris.local",
     phone: "+265991000102",
   },
   {
     name: "Development Pending Merchant",
-    email: "seed.pending@smartpay.local",
+    email: "seed.pending@solaris.local",
     phone: "+265991000103",
+  },
+  {
+    name: "Development Approved Merchant",
+    email: "seed.approved@solaris.local",
+    phone: "+265991000104",
   },
 ];
 
@@ -41,6 +46,7 @@ async function main(): Promise<void> {
         name: fixture.name,
         phone: fixture.phone,
         passwordHash,
+        emailVerifiedAt: new Date(),
       },
       create: {
         ...fixture,

@@ -1,4 +1,4 @@
-# SmartPay — Unit Test Documentation
+# Solaris — Unit Test Documentation
 
 ## Overview
 

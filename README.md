@@ -1,12 +1,12 @@
  <p align="center">
-  <img src="assets/logo.png" alt="SmartPay Malawi" width="500">
+  <img src="assets/logo.png" alt="Solaris Malawi" width="500">
 </p>
 
-# SmartPay Malawi
+# Solaris Malawi
 
 **An API-first payment gateway under development for the Malawian digital economy.**
 
-SmartPay Malawi is being developed to provide merchants with a unified integration point for accepting and managing digital payments through multiple payment providers. The long-term goal is to simplify payment integration while providing consistent transaction handling, merchant management, and settlement infrastructure.
+Solaris Malawi is being developed to provide merchants with a unified integration point for accepting and managing digital payments through multiple payment providers. The long-term goal is to simplify payment integration while providing consistent transaction handling, merchant management, and settlement infrastructure.
 
 The project currently focuses on its foundational backend: merchant authentication, business profile management, KYC onboarding, and administrator review workflows.
 
@@ -33,7 +33,7 @@ The project currently focuses on its foundational backend: merchant authenticati
 
 Payment integrations can require merchants to work with different provider APIs, authentication mechanisms, payment flows, callbacks, and transaction states.
 
-SmartPay aims to abstract these differences behind a consistent API, initially focusing on Malawi's digital payment ecosystem, including Airtel Money and TNM Mpamba.
+Solaris aims to abstract these differences behind a consistent API, initially focusing on Malawi's digital payment ecosystem, including Airtel Money and TNM Mpamba.
 
 The application is being built as a **modular monolith** using NestJS, TypeScript, PostgreSQL, and Prisma.
 
@@ -110,7 +110,7 @@ Redis is included in the development infrastructure, but a complete application-
 
 ## Architecture
 
-SmartPay uses a modular monolith: business responsibilities are separated into NestJS modules but run within one backend application.
+Solaris uses a modular monolith: business responsibilities are separated into NestJS modules but run within one backend application.
 
 ### Current architecture
 
@@ -164,7 +164,7 @@ The following is the intended direction, not a description of functionality that
                Merchant Integration
                        |
                        v
-                  SmartPay API
+                  Solaris API
                        |
                        v
               Payment Orchestration
@@ -224,7 +224,7 @@ The frontend is not currently part of the NestJS backend build. It will be devel
 The current repository is organized into NestJS modules, Prisma schema and migrations, automated tests, and technical documentation.
 
 ```text
-smart-pay-malawi/
+Solaris-malawi/
 ├── src/
 │   ├── admin/
 │   │   ├── admin.controller.ts
@@ -292,8 +292,8 @@ Install the following:
 Clone the repository:
 
 ```bash
-git clone https://github.com/KelvinJustin/SmartPay-Malawi.git
-cd SmartPay-Malawi
+git clone https://github.com/KelvinJustin/Solaris-Malawi.git
+cd Solaris-Malawi
 ```
 
 Install dependencies:
@@ -594,9 +594,9 @@ Documentation should describe implemented behavior separately from proposed func
 
 ## Repository
 
-**SmartPay Malawi**
+**Solaris Malawi**
 
-Repository: [github.com/KelvinJustin/SmartPay-Malawi](https://github.com/KelvinJustin/SmartPay-Malawi)
+Repository: [github.com/KelvinJustin/Solaris-Malawi](https://github.com/KelvinJustin/Solaris-Malawi)
 
 The project is intended to become payment infrastructure for the Malawian digital economy. Development is ongoing, and the current repository represents the foundational backend rather than a complete production payment gateway.
 

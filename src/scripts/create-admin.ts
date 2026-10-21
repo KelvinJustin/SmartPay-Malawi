@@ -7,7 +7,7 @@
  * Usage:
  *   npx tsx ./src/scripts/create-admin.ts \
  *     --name "John Doe" \
- *     --email "john@smartpay.mw" \
+ *     --email "john@solaris.mw" \
  *     --password "supersecret123" \
  *     --role COMPLIANCE
  *
@@ -36,7 +36,7 @@ import { DatabaseModule } from '../database/database.module.js';
 
 const program = new Command()
     .name('create-admin')
-    .description('Provision a new SmartPay admin account')
+    .description('Provision a new Solaris admin account')
     .requiredOption('-n, --name <name>', 'Full name')
     .requiredOption('-e, --email <email>', 'Email address')
     .requiredOption('-p, --password <password>', 'Password (min 12 characters)')
